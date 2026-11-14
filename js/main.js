@@ -19,7 +19,7 @@
   const $ = (s, el = document) => el.querySelector(s);
   const frame = $("#frame"), canvas = $("#pattern"), stage = $("#stage"),
         sliver = $("#sliver"), side = $("#side"), sideHot = $("#sideHot"),
-        band = $("#band"), titleEl = $("#title"), introEl = $("#intro"),
+        titleEl = $("#title"), introEl = $("#intro"),
         navEl = $("#nav"), navList = $("#navList"), panel = $("#panel"), metaEl = $("#meta");
 
   const mqMobile = matchMedia("(max-width: 820px)");
@@ -91,7 +91,7 @@
     started: false,
     simTarget: 6600,
     fast: false,
-    band: false,             // phones: pattern lives in the strip above the menu bar
+    single: 0, singleT: 0,   // phones: layers merge into one band when a section is open
     gap: 0, gapT: 0,
     fill: 0, fillT: 0,
     twistIntro: 0, twistIntroT: 0,
@@ -102,15 +102,15 @@
     busyUntil: 0,
     dirty: true
   };
-  const N_DESKTOP = 6, N_MOBILE = 5, N_BAND = 3;
+  const N_DESKTOP = 6, N_MOBILE = 5;
   const makeStrips = (n, p = 0) => Array.from({ length: n }, () => ({ p, from: p, to: p, t0: 0, dur: 1, delay: 0 }));
   S.strips = makeStrips(N_DESKTOP);
 
   function placeCanvas() {
     const mobile = mqMobile.matches;
-    const host = mobile ? (S.band ? band : stage) : frame;
+    const host = mobile ? stage : frame;
     if (canvas.parentNode !== host) host.prepend(canvas);
-    const n = mobile ? (S.band ? N_BAND : N_MOBILE) : N_DESKTOP;
+    const n = mobile ? N_MOBILE : N_DESKTOP;
     if (n !== S.strips.length) {
       const p = (!mobile && current) ? 1 : 0;
       S.strips = makeStrips(n, p);
@@ -152,7 +152,7 @@
   /* --------------------------------------------------------------------
      Strip layout
      desktop: stage (cols 1–2) ⇄ right-edge sliver, per-strip progress p
-     phones : stage, or the band above the menu bar when a section is open
+     phones : stage; with a section open the layers merge into one top band
      -------------------------------------------------------------------- */
   function relRect(el) {
     const c = canvas.getBoundingClientRect(), r = el.getBoundingClientRect();
@@ -162,10 +162,10 @@
   function layout() {
     if (!rd.ok || !S.started) return [];
     const mobile = mqMobile.matches;
-    const home = mobile ? relRect(S.band ? band : stage) : relRect(stage);
+    const home = relRect(stage);
     if (home.h < 1 || home.w < 1) return [];
     const n = S.strips.length, mid = (n - 1) / 2;
-    const gapPx = S.gap * clamp(home.h * .0056, mobile && S.band ? 2 : 2.5, 6);
+    const gapPx = S.gap * clamp(home.h * .0056, 2.5, 6);
     const sh = (home.h - gapPx * (n - 1)) / n;
     const twist = S.twistIntro * 14 + S.ptr * 26;
     const rects = [];
@@ -173,18 +173,28 @@
     const oxHome = d => -home.x + twist * d + S.turn * (1 + d * .12) + S.scroll * (.16 + d * .03);
     const oxSliver = d => -home.x + twist * d * 1.6 + S.turn * (1 - d * .12) - S.scroll * .1;
 
+    if (mobile) {
+      // the first layer grows to fill the band while the others fold away
+      const q = S.single, w = i => (i === 0 ? 1 : 1 - q);
+      let sumW = 0; for (let i = 0; i < n; i++) sumW += w(i);
+      const g = gapPx * (1 - q), usable = home.h - g * (n - 1);
+      let y = home.y;
+      for (let i = 0; i < n; i++) {
+        const h = usable * w(i) / sumW;
+        if (h > .5) rects.push({ x: home.x, y, w: home.w, h, ox: oxHome(i - mid * (1 - q)), oy: -home.y });
+        y += h + g;
+      }
+      return rects;
+    }
     for (let i = 0; i < n; i++) {
       const d = i - mid, y = home.y + i * (sh + gapPx);
-      if (mobile) { rects.push({ x: home.x, y, w: home.w, h: sh, ox: oxHome(d), oy: -home.y }); continue; }
       const p = easeInOut(S.strips[i].p);
       const x0 = lerp(home.x, sv.x, p), x1 = lerp(home.x + home.w, sv.x + sv.w, p);
       rects.push({ x: x0, y, w: x1 - x0, h: sh, ox: lerp(oxHome(d), oxSliver(d), p), oy: -home.y });
     }
-    if (!mobile) {
-      for (let i = 0; i < n; i++) {
-        const d = i - mid, y = home.y + i * (sh + gapPx);
-        rects.push({ x: sv.x, y, w: sv.w, h: sh, ox: oxSliver(d), oy: -home.y });
-      }
+    for (let i = 0; i < n; i++) {
+      const d = i - mid, y = home.y + i * (sh + gapPx);
+      rects.push({ x: sv.x, y, w: sv.w, h: sh, ox: oxSliver(d), oy: -home.y });
     }
     return rects;
   }
@@ -223,6 +233,7 @@
     moving = approach("ptr", 2.4, dt) || moving;
     moving = approach("scroll", 6, dt) || moving;
     moving = approach("turn", 2.2, dt) || moving;
+    moving = approach("single", 3.4, dt) || moving;
 
     S.strips.forEach(s => {
       if (s.p === s.to) return;
@@ -461,7 +472,7 @@
       `<button class="close" type="button" data-go="">Close <span aria-hidden="true">×</span></button></div></header>` +
       itemsHTML(sec.items);
     panel.scrollTop = 0;
-    panel.classList.remove("is-scrolled");
+    root.classList.remove("panel-scrolled");
     S.scrollT = 0;
     panel.querySelectorAll(".rail").forEach(initRail);
 
@@ -481,7 +492,7 @@
   }
 
   let current = "";
-  let swapTimer = 0, bandTimer = 0;
+  let swapTimer = 0;
 
   function setActive(id) {
     navList.querySelectorAll(".nav__item").forEach(a => {
@@ -506,11 +517,7 @@
       const mobile = mqMobile.matches;
       if (!mobile) collapse(1);
       renderPanel(sec, mobile ? 0 : 420);
-      if (mobile) {
-        window.scrollTo({ top: 0 });
-        clearTimeout(bandTimer);
-        bandTimer = setTimeout(() => { S.band = true; placeCanvas(); busy(1200); }, 700);
-      }
+      if (mobile) { window.scrollTo({ top: 0 }); S.singleT = 1; }
     } else {
       panel.classList.add("is-leaving");
       swapTimer = setTimeout(() => {
@@ -530,9 +537,8 @@
     S.turnT -= 90;
     busy(1600);
     panel.classList.add("is-leaving");
-    clearTimeout(bandTimer);
-    if (mqMobile.matches) { S.band = false; placeCanvas(); }
-    else collapse(0);
+    S.singleT = 0;
+    if (!mqMobile.matches) collapse(0);
     swapTimer = setTimeout(() => {
       root.classList.remove("is-panel");
       panel.classList.remove("is-leaving");
@@ -616,7 +622,7 @@
 
   panel.addEventListener("scroll", () => {
     S.scrollT = panel.scrollTop + railX * .5;
-    panel.classList.toggle("is-scrolled", panel.scrollTop > 8);
+    root.classList.toggle("panel-scrolled", panel.scrollTop > 8);
     kick();
   }, { passive: true });
   window.addEventListener("scroll", () => {
@@ -627,8 +633,9 @@
 
   let rzT = 0;
   function onResize() {
-    if (!mqMobile.matches) { S.band = false; if (current) S.strips.forEach(s => { s.p = s.from = s.to = 1; }); }
-    else { S.band = !!current; root.classList.remove("side-open"); }
+    if (!mqMobile.matches) { if (current) S.strips.forEach(s => { s.p = s.from = s.to = 1; }); }
+    else root.classList.remove("side-open");
+    S.single = S.singleT = current ? 1 : 0;
     placeCanvas();
     requestRender();
     clearTimeout(rzT);
@@ -638,7 +645,7 @@
   mqMobile.addEventListener("change", onResize);
   if (window.ResizeObserver) {
     const ro = new ResizeObserver(() => { rd.ok && rd.resize(); requestRender(); });
-    ro.observe(stage); ro.observe(band);
+    ro.observe(stage);
   }
 
   /* =====================================================================

@@ -371,6 +371,7 @@
       gl.bindVertexArray(this.vao);
       gl.viewport(0, 0, this.W, this.H);
       gl.disable(gl.BLEND);
+      gl.disable(gl.SCISSOR_TEST);
       gl.uniform2i(P.u.uSize, this.W, this.H);
       gl.uniform4fv(P.u.uRegime, this.opts.regime);
       gl.activeTexture(gl.TEXTURE1);
@@ -418,8 +419,23 @@
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      gl.disable(gl.SCISSOR_TEST);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
+      if (!n) return;
+      // only shade the pixels the strips can cover (a thin edge strip is cheap)
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let i = 0; i < n; i++) {
+        const r = rects[i];
+        x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y);
+        x1 = Math.max(x1, r.x + Math.max(0, r.w)); y1 = Math.max(y1, r.y + Math.max(0, r.h));
+      }
+      const d = this.dpr, H = this.canvas.height;
+      const sx = Math.max(0, Math.floor(x0 * d)), sy = Math.max(0, Math.floor(H - y1 * d));
+      const sw = Math.min(this.canvas.width, Math.ceil(x1 * d)) - sx, sh = Math.min(H, Math.ceil(H - y0 * d)) - sy;
+      if (sw <= 0 || sh <= 0) return;
+      gl.enable(gl.SCISSOR_TEST);
+      gl.scissor(sx, sy, sw, sh);
       gl.useProgram(P.p);
       gl.bindVertexArray(this.vao);
       gl.activeTexture(gl.TEXTURE0);
@@ -441,6 +457,7 @@
       gl.uniform1fv(P.u.uAlpha, A);
       gl.uniform1i(P.u.uCount, n);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.disable(gl.SCISSOR_TEST);
     }
   }
 

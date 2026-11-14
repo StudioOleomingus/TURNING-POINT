@@ -16,7 +16,8 @@ assets/uploads/            files uploaded through the editor
 assets/video/              videos + poster frames
 explorations/
   shared/explore.css       shared top bar / info panel for explorations
-  confluence/ metamorphosis/ flux/ emergence/   placeholder pages to build in
+  metamorphosis/           BUILT copy of the three.js prototype (see below)
+  confluence/ flux/ emergence/   placeholder pages to build in
   perforation/             a working interactive piece (touch to grow)
   _template/               copy this to start a new exploration
 .nojekyll                  tells GitHub Pages to serve files untouched
@@ -89,7 +90,8 @@ on phones every box is full width.
   on the right edge, the right-hand column slides away, and the content
   takes the full width. Hover the right edge (or "← Menu" at the top
   right) to slide the menu back in. Esc closes the menu, then the section.
-* Phones: the pattern shrinks into a strip on top of the bottom menu bar.
+* Phones: the layers merge into a single band of pattern pinned to the
+  top of the screen.
 
 ## Adding an exploration
 
@@ -100,6 +102,23 @@ on phones every box is full width.
    see `perforation/` for a full example.
 3. Add a `{ type: "project", … href: "explorations/02-my-piece/index.html" }` box to
    the Explore section in `js/content.js`.
+
+## Updating Metamorphosis (the three.js prototype)
+
+`explorations/metamorphosis/` is the *built* output of the Vite project in
+`TOMB_Prototype 01`, not its source. After changing the prototype, rebuild
+it into this folder from the prototype's folder:
+
+```
+npm run build -- --base ./ --outDir "G:/GIT/TURNING-POINT/explorations/metamorphosis" --emptyOutDir
+```
+
+`--base ./` makes every path relative so it works inside a sub-folder (it
+still works at the root, e.g. on Netlify). The prototype loads its data
+with relative paths (`data/…`, `models/…`) for the same reason, and shows
+an "← Explore" link back to the site only when it runs under
+`/explorations/`. Then change the `<title>` in the built `index.html` if
+you like, and commit.
 
 ## Changing the look of the pattern
 
