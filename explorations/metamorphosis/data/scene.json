@@ -41,17 +41,12 @@
     "sizeM": 2.0012
   },
   "chapters": {
-    "coral": {
+    "bark": {
       "N": 2560,
       "windowPx": 633,
       "canvasM": 8.0935
     },
-    "fish": {
-      "N": 2560,
-      "windowPx": 633,
-      "canvasM": 8.0935
-    },
-    "termite": {
+    "watercolour": {
       "N": 2560,
       "windowPx": 633,
       "canvasM": 8.0935
