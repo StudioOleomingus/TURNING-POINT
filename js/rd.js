@@ -21,6 +21,12 @@
      rd.seed(x, y, radius);        // cell units
      rd.step(n);
      rd.render(rects, { fill });   // rects: [{x,y,w,h, ox,oy, tx,ty, a}]
+     options: clear:false draws over what is there; tint:[r,g,b] uses a
+     flat colour; invert:true draws the cut shapes; vignette:[x,y,r];
+     ramp:[x0,x1,a0,a1] fades opacity from a0 to a1 between x0 and x1;
+     pale:0..1 lightens the texture towards white; mono:true renders it
+     in black and white.
+     Two instances may share one canvas (they share its WebGL context).
    ===================================================================== */
 (function () {
   "use strict";
@@ -105,6 +111,13 @@
   uniform float uFill;     // 0..1 — reveal texture everywhere
   uniform float uThresh;   // cut threshold on B
   uniform int   uHasTex;
+  uniform vec3  uTint;     // flat colour instead of the texture
+  uniform int   uTintOn;
+  uniform int   uInvert;   // 1 = draw the cut shapes instead of the steel
+  uniform vec3  uVig;      // radial fade: centre xy, radius (css px); z = 0 → off
+  uniform vec4  uRamp;     // horizontal fade: from x0 to x1 (css px), opacity a0 → a1
+  uniform float uPale;     // 0..1 — mix the texture towards white
+  uniform int   uMono;     // 1 = black and white
   uniform vec4  uRects[${MAX_RECTS}];  // x0,y0,x1,y1 (css px)
   uniform vec4  uOffs[${MAX_RECTS}];   // pattern offset xy (css px), texture offset zw (uv)
   uniform float uAlpha[${MAX_RECTS}];
@@ -152,17 +165,29 @@
     float cut = smoothstep(uThresh - w, uThresh + w, B);
 
     vec3 col;
-    if (uHasTex == 1) {
+    if (uTintOn == 1) {
+      col = uTint;
+    } else if (uHasTex == 1) {
       col = texture(uTex, q / uTexPx + of.zw).rgb;
     } else {
       float n = vnoise(q * 0.012) * 0.6 + vnoise(q * 0.05) * 0.4;
       col = mix(vec3(0.66, 0.36, 0.16), vec3(0.88, 0.62, 0.30), n);
     }
+    if (uMono == 1) {
+      float l = dot(col, vec3(0.299, 0.587, 0.114));
+      col = vec3(clamp((l - 0.5) * 1.25 + 0.47, 0.0, 1.0));
+    }
+    col = mix(col, vec3(1.0), uPale);
     // darkened, "burnt" rim just outside each cut
-    float rim = smoothstep(uThresh * 0.35, uThresh, B) * (1.0 - cut);
-    col *= 1.0 - 0.28 * rim;
+    if (uTintOn == 0 && uInvert == 0) {
+      float rim = smoothstep(uThresh * 0.35, uThresh, B) * (1.0 - cut);
+      col *= 1.0 - 0.28 * rim;
+    }
 
-    float a = vis * (1.0 - cut) * uAlpha[idx];
+    float shape = uInvert == 1 ? cut : vis * (1.0 - cut);
+    if (uVig.z > 0.0) shape *= 1.0 - smoothstep(uVig.z * 0.4, uVig.z, distance(p, uVig.xy));
+    if (uRamp.y > uRamp.x) shape *= mix(uRamp.z, uRamp.w, smoothstep(uRamp.x, uRamp.y, p.x));
+    float a = shape * uAlpha[idx];
     o = vec4(col * a, a);
   }`;
 
@@ -420,9 +445,13 @@
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, this.canvas.width, this.canvas.height);
       gl.disable(gl.SCISSOR_TEST);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
+      if (o.clear !== false) {          // pass clear:false to draw over another layer
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
       if (!n) return;
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       // only shade the pixels the strips can cover (a thin edge strip is cheap)
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (let i = 0; i < n; i++) {
@@ -452,12 +481,20 @@
       gl.uniform1f(P.u.uFill, o.fill || 0);
       gl.uniform1f(P.u.uThresh, this.opts.threshold);
       gl.uniform1i(P.u.uHasTex, this.hasTex ? 1 : 0);
+      gl.uniform3fv(P.u.uTint, o.tint || [0, 0, 0]);
+      gl.uniform1i(P.u.uTintOn, o.tint ? 1 : 0);
+      gl.uniform1i(P.u.uInvert, o.invert ? 1 : 0);
+      gl.uniform3fv(P.u.uVig, o.vignette || [0, 0, 0]);
+      gl.uniform4fv(P.u.uRamp, o.ramp || [0, 0, 1, 1]);
+      gl.uniform1f(P.u.uPale, o.pale || 0);
+      gl.uniform1i(P.u.uMono, o.mono ? 1 : 0);
       gl.uniform4fv(P.u.uRects, R);
       gl.uniform4fv(P.u.uOffs, O);
       gl.uniform1fv(P.u.uAlpha, A);
       gl.uniform1i(P.u.uCount, n);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       gl.disable(gl.SCISSOR_TEST);
+      gl.disable(gl.BLEND);
     }
   }
 

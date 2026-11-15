@@ -115,6 +115,11 @@
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
   .toast.err { background: var(--bad); }
+  .combine { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 6px; font-size: 13px; color: var(--soft); }
+  .combine.on { border-color: var(--rust); color: var(--ink); background: #fff; }
+  .card.picked { border-color: var(--rust); box-shadow: 0 0 0 2px rgba(191,106,51,.15); }
+  .pick { width: 16px; height: 16px; accent-color: var(--rust); cursor: pointer; }
+  .row.slide { padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
   .intro-note { background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--gold); padding: 12px 16px; border-radius: 4px; margin-bottom: 24px; color: var(--grey); font-size: 14px; line-height: 1.5; }
   .intro-note b { color: var(--ink); }
 
@@ -173,6 +178,7 @@
   let dirty = false;
   let view = { kind: "site", index: 0 };
   const open = new Set();                 // which item cards are expanded
+  const selected = new Set();             // images ticked for "combine into carousel"
   const blobs = {};                       // freshly uploaded files → object URLs for previews
 
   const $ = s => document.querySelector(s);
@@ -207,6 +213,7 @@
   const TYPES = {
     text:    { label: "Text", fields: [["span", "span"], ["title", "text", "Heading"], ["body", "html", "Body (HTML: <p>, <em>, <a href>)"]] },
     image:   { label: "Image", fields: [["span", "span"], ["src", "media:image", "Image"], ["alt", "text", "Alt text (for screen readers)"], ["caption", "html1", "Caption"], ["ratio", "text", "Aspect ratio (w/h, e.g. 4/3) — set automatically on upload"]] },
+    carousel:{ label: "Carousel", fields: [["span", "span"], ["ratio", "text", "Aspect ratio of the frame (w/h) — set from the first image"], ["slides", "slides"]] },
     video:   { label: "Video", fields: [["span", "span"], ["src", "media:video", "Video file (.mp4)"], ["poster", "media:image", "Poster image"], ["caption", "html1", "Caption"], ["ratio", "text", "Aspect ratio (w/h)"], ["autoplay", "bool", "Play silently on a loop (no controls)"]] },
     embed:   { label: "Embed", fields: [["span", "span"], ["src", "url", "Embed URL (YouTube: https://www.youtube.com/embed/ID)"], ["caption", "html1", "Caption"], ["ratio", "text", "Aspect ratio (w/h)"]] },
     project: { label: "Exploration", fields: [["index", "text", "Number"], ["title", "text", "Title"], ["text", "html1", "Description"], ["href", "text", "Page (e.g. explorations/flux/index.html) — empty = forthcoming"], ["thumb", "media:image", "Thumbnail (portrait, 3:5)"], ["status", "text", "Status label (e.g. In progress)"], ["newTab", "bool", "Open in a new tab"]] },
@@ -217,6 +224,7 @@
   const BLANK = {
     text: { type: "text", span: 2, title: "", body: "<p></p>" },
     image: { type: "image", span: 2, src: "", alt: "", caption: "", ratio: "4/3" },
+    carousel: { type: "carousel", span: 3, ratio: "1800/1273", slides: [] },
     video: { type: "video", span: 2, src: "", poster: "", caption: "", ratio: "16/9" },
     embed: { type: "embed", span: 2, src: "", caption: "", ratio: "16/9" },
     project: { type: "project", index: "", title: "", text: "", href: "", thumb: "", status: "" },
@@ -224,7 +232,7 @@
     credits: { type: "credits", span: 3, groups: [{ role: "", names: [] }] },
     links: { type: "links", span: 1, title: "", links: [{ label: "", url: "" }] }
   };
-  const summary = it => strip(it.title) || strip(it.caption) || strip(it.alt) || (it.src || "").split("/").pop() || strip(it.text) || (it.groups ? it.groups.map(g => g.role).join(", ") : "") || "(empty)";
+  const summary = it => it.type === "carousel" ? `${(it.slides || []).length} images — ${strip((it.slides || [])[0]?.caption) || ""}` : strip(it.title) || strip(it.caption) || strip(it.alt) || (it.src || "").split("/").pop() || strip(it.text) || (it.groups ? it.groups.map(g => g.role).join(", ") : "") || "(empty)";
 
   /* ======================================================================
      Field widgets
@@ -236,6 +244,11 @@
     if (kind === "span") {
       return wrap("", h("select", { onchange: e => set(+e.target.value) },
         [1, 2, 3, 4].map(n => h("option", { value: n, selected: (obj.span || 1) === n }, n === 4 ? "4 — full width" : `${n} column${n > 1 ? "s" : ""}`))));
+    }
+    if (kind === "layout") {
+      return wrap("", h("select", { onchange: e => set(e.target.value || undefined) },
+        h("option", { value: "", selected: !obj.layout }, "Vertical — scroll down"),
+        h("option", { value: "horizontal", selected: obj.layout === "horizontal" }, "Horizontal — scroll sideways, full height")));
     }
     if (kind === "bool") {
       return h("label", { class: "check" }, h("input", { type: "checkbox", checked: !!obj[key], onchange: e => set(e.target.checked) }), label);
@@ -281,6 +294,19 @@
             h("textarea", { rows: Math.max(2, (g.names || []).length), value: (g.names || []).join("\n"), placeholder: "Names", oninput: e => { g.names = e.target.value.split("\n").map(s => s.trim()).filter(Boolean); setDirty(); } })),
           ctl(obj.groups, i)))),
         h("div", {}, h("button", { class: "btn small", type: "button", onclick: () => { obj.groups.push({ role: "", names: [] }); setDirty(); renderMain(); } }, "+ Add group")));
+    }
+    if (kind === "slides") {
+      obj.slides = obj.slides || [];
+      return h("div", { class: "field full" }, h("label", {}, "Slides"),
+        h("div", { class: "list" }, obj.slides.map((sl, i) => h("div", { class: "row slide" },
+          h("div", { class: "grid" },
+            fieldEl(sl, "src", "media:image", `Image ${i + 1}`, () => {
+              if (i === 0 && sl.src) mediaRatioFromPath(sl.src).then(r => { if (r) { obj.ratio = r; } });
+            }),
+            fieldEl(sl, "caption", "html1", "Caption"),
+            fieldEl(sl, "alt", "text", "Alt text")),
+          ctl(obj.slides, i)))),
+        h("div", {}, h("button", { class: "btn small", type: "button", onclick: () => { obj.slides.push({ src: "", alt: "", caption: "" }); setDirty(); renderMain(); } }, "+ Add slide")));
     }
     if (kind.startsWith("pairs")) {
       const [, a, b] = kind.split(":");
@@ -371,16 +397,43 @@
       fieldEl(sec, "label", "text", "Menu label", renderNav),
       fieldEl(sec, "id", "text", "Id (used in the link — letters, numbers, hyphens)", renderNav),
       fieldEl(sec, "heading", "text", "Heading"),
-      fieldEl(sec, "lede", "text", "Short line beside the heading")));
+      fieldEl(sec, "lede", "text", "Short line beside the heading"),
+      fieldEl(sec, "layout", "layout", "Layout (desktop)")));
 
     main.append(h("hr"), h("h3", {}, `Boxes (${sec.items.length})`));
     if (sec.items.some(i => i.type === "project")) main.append(h("p", { class: "sub" }, "Exploration boxes that follow each other are shown as one sideways-scrolling row of tall cards."));
+    // tick images, then combine them into one carousel
+    const picked = sec.items.filter(it => selected.has(it));
+    if (sec.items.some(it => it.type === "image")) {
+      main.append(h("div", { class: "combine" + (picked.length ? " on" : "") },
+        h("span", {}, picked.length ? `${picked.length} image${picked.length > 1 ? "s" : ""} selected` : "Tick images (☐) to combine them into a carousel."),
+        h("button", { class: "btn small", type: "button", disabled: picked.length < 2, onclick: () => {
+          const idx = picked.map(it => sec.items.indexOf(it)).sort((a, b) => a - b);
+          const first = sec.items[idx[0]];
+          const cz = { type: "carousel", span: Math.max(...picked.map(it => it.span || 2)), ratio: first.ratio || "4/3",
+                       slides: idx.map(k => ({ src: sec.items[k].src, alt: sec.items[k].alt || "", caption: sec.items[k].caption || "" })) };
+          for (const k of idx.slice().reverse()) sec.items.splice(k, 1);
+          sec.items.splice(idx[0], 0, cz);
+          selected.clear(); open.add(cz); setDirty(); render();
+          toast("Combined into a carousel — remember to Save.");
+        } }, "Combine into carousel"),
+        picked.length ? h("button", { class: "btn small", type: "button", onclick: () => { selected.clear(); renderMain(); } }, "Clear") : null));
+    }
+
     sec.items.forEach((it, i) => {
       const key = sec.id + ":" + i;
       const T = TYPES[it.type] || { label: it.type, fields: [] };
-      const card = h("div", { class: "card" + (open.has(it) ? "" : " closed") });
+      const card = h("div", { class: "card" + (open.has(it) ? "" : " closed") + (selected.has(it) ? " picked" : "") });
+      const pick = it.type === "image" ? h("input", { type: "checkbox", class: "pick", title: "Select to combine into a carousel", checked: selected.has(it),
+        onclick: e => e.stopPropagation(),
+        onchange: e => { e.target.checked ? selected.add(it) : selected.delete(it); renderMain(); } }) : null;
+      const split = it.type === "carousel" ? h("button", { class: "icon", type: "button", title: "Split back into separate images", onclick: e => {
+        e.stopPropagation();
+        const imgs = (it.slides || []).map(sl => ({ type: "image", span: 2, ratio: it.ratio, src: sl.src, alt: sl.alt || "", caption: sl.caption || "" }));
+        sec.items.splice(i, 1, ...imgs); setDirty(); render();
+      } }, "⇹") : null;
       const header = h("header", { onclick: () => { open.has(it) ? open.delete(it) : open.add(it); card.classList.toggle("closed"); } },
-        h("span", { class: "chev" }, "▾"), h("span", { class: "badge" }, T.label), h("span", { class: "t" }, summary(it)),
+        pick, h("span", { class: "chev" }, "▾"), h("span", { class: "badge" }, T.label), h("span", { class: "t" }, summary(it)), split,
         ctl(sec.items, i, h("button", { class: "icon", type: "button", title: "Duplicate", onclick: e => {
           e.stopPropagation(); const copy = JSON.parse(JSON.stringify(it)); sec.items.splice(i + 1, 0, copy); open.add(copy); setDirty(); render();
         } }, "⧉")));
@@ -414,7 +467,7 @@
   const HEADER = `/* =====================================================================
    TURNING POINT — site content
    Edited with admin/index.html — or by hand: it is plain JavaScript.
-   Box types: text, image, video, embed, project, event, credits, links
+   Box types: text, image, carousel, video, embed, project, event, credits, links
    (see README.md). Paths are relative to index.html.
    ===================================================================== */
 
@@ -565,6 +618,14 @@
       toast(`Uploaded to ${path} — remember to Save.`);
       return path;
     } catch (e) { console.error(e); toast(e.message || String(e), true); return null; }
+  }
+
+  function mediaRatioFromPath(path) {
+    return new Promise(res => {
+      const i = new Image();
+      i.onload = () => res(i.naturalWidth && i.naturalHeight ? `${i.naturalWidth}/${i.naturalHeight}` : null);
+      i.onerror = () => res(null); i.src = resolve(path);
+    });
   }
 
   function mediaRatio(file) {

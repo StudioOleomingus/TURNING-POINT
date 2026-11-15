@@ -73,6 +73,15 @@ don't upload the `admin/` folder.
 1 | 2 | 3 | 4` sets how many of the four columns a box covers on desktop;
 on phones every box is full width.
 
+* **Horizontal sections**: give a section `"layout": "horizontal"` (or pick
+  *Layout → Horizontal* in the editor) and on desktop its header stays put
+  while the content runs sideways at full height — images, video and
+  carousels sized to the height, long text flowing into columns. The mouse
+  wheel, a drag, the arrow keys or the ← → buttons move it. Phones keep the
+  normal vertical scroll. Structure & Process uses this.
+* **Carousel**: several images in one box, swiped or stepped with arrows.
+  In the editor, tick images (☐) and press *Combine into carousel*; the ⇹
+  button on a carousel splits it back into separate images.
 * **Explore**: consecutive `project` boxes form one sideways-scrolling row
   of tall cards (thumbnails look best portrait, about 5:7). A project with
   an empty `href` shows as "Forthcoming"; `newTab: true` opens it in a new tab.
@@ -86,12 +95,13 @@ on phones every box is full width.
 
 * Opening: the pattern grows in the left half while the title fades in
   in place; then the text and the menu appear. Click / key skips it.
-* Opening a section (desktop): the pattern's layers sweep into the strip
-  on the right edge, the right-hand column slides away, and the content
+* Opening a section (desktop): the pattern's layers slide out to the left,
+  the right-hand column slides away, and the content
   takes the full width. Hover the right edge (or "← Menu" at the top
-  right) to slide the menu back in. Esc closes the menu, then the section.
+  right) to slide the menu back in. "← Back" (or Esc) returns home.
 * Phones: the layers merge into a single band of pattern pinned to the
   top of the screen.
+* Everything enters by sliding and being uncovered — no fades.
 
 ## Adding an exploration
 
@@ -123,8 +133,28 @@ you like, and commit.
 ## Changing the look of the pattern
 
 * **Steel texture:** replace `assets/img/texture.jpg` (square, ~900–1200 px).
-* **Density:** `DENSITY` at the top of `js/main.js` (1.2 = 20% denser than
-  the first version; higher = finer pattern).
+* **Density:** `DENSITY` at the top of `js/main.js` (1 = the first version,
+  2 = twice as fine). Try values without editing by adding `?density=1.5` to
+  the address. Phones are capped at `DENSITY_PHONE_MAX` (1.5): finer cuts
+  are hard to read on a small screen and the grid gets heavy for phone GPUs.
+  Every step of density multiplies the simulation work by its square, so
+  check the opening on an older laptop after raising it.
+* **Layer behind:** a finer, still pattern fills the content area between
+  the top and bottom of the strips. It is a pre-rendered seamless tile
+  (`assets/img/pattern-tile.png`, used as a mask) so it costs nothing at
+  runtime. It stays on in the section pages too. In `css/style.css`: `--bg-ink` (colour), `--bg-alpha` (opacity
+  behind the strips), `--bg-text` (fraction of that behind the text),
+  `--bg-tile` (tile size — smaller is denser).
+* **Black and white / colour:** `<html data-theme="mono">` in `index.html`
+  gives the black-and-white version on paper (`assets/img/paper.jpg`; the colour version uses it at 40%, pre-blended as `paper-40.jpg`), with
+  the steel in greyscale, photos in greyscale and slightly bled, ink-like
+  type. The default is now `data-theme="color"`; change it to `mono` for black and white — or try
+  either without editing with `?theme=color` / `?theme=mono` in the address.
+  The theme colours are the `[data-theme="mono"]` block at the top of
+  `css/style.css`; the ink bleed is `--ink-bleed` plus the `#ink` SVG filter
+  in `index.html` (its `scale` sets how rough the large type gets).
+* **Resting-cursor pattern:** switched off (`ENABLED = false` in section 6
+  of `js/main.js`); set it to `true` to bring it back.
 * **Number of layers:** `N_DESKTOP` / `N_MOBILE` / `N_BAND` in `js/main.js`.
 * **Lines vs. dots, thickness, scale:** options passed to
   `new TurningPattern(…)` in `js/main.js` — `dotBias` (−1 lines … +1 dots),

@@ -32,7 +32,11 @@
   const esc = s => String(s == null ? "" : s).replace(/"/g, "&quot;");
 
   /* Pattern density: 1 = original grain; 1.2 = 20% denser */
-  const DENSITY = 1.2;
+  let DENSITY = 1.2;
+  // try another value without editing: …/index.html?density=1.4
+  { const q = parseFloat(new URLSearchParams(location.search).get("density")); if (q > 0.3 && q < 4) DENSITY = q; }
+  // phones: past ~1.5 the cuts get too thin to read on a small screen, and the grid gets heavy
+  const DENSITY_PHONE_MAX = 1.5;
 
   /* =====================================================================
      1. Build static text
@@ -51,33 +55,12 @@
   metaEl.innerHTML = `<span class="meta__place">${SITE.meta || ""}</span>` +
     (SITE.socials || []).map(s => `<span class="sep">·</span><a href="${esc(s.url)}" target="_blank" rel="noopener">${s.label}</a>`).join("");
 
-  introEl.innerHTML = (SITE.intro || []).map(p => `<p>${p}</p>`).join("");
-  (function splitWords() {
-    let n = 0;
-    introEl.querySelectorAll("p").forEach((p, pi) => {
-      const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
-      const nodes = [];
-      while (walker.nextNode()) nodes.push(walker.currentNode);
-      nodes.forEach(node => {
-        const frag = document.createDocumentFragment();
-        node.textContent.split(/(\s+)/).forEach(part => {
-          if (!part) return;
-          if (/^\s+$/.test(part)) { frag.appendChild(document.createTextNode(part)); return; }
-          const s = document.createElement("span");
-          s.className = "w";
-          s.style.setProperty("--d", (n++ * 9 + pi * 140) + "ms");
-          s.textContent = part;
-          frag.appendChild(s);
-        });
-        node.parentNode.replaceChild(frag, node);
-      });
-    });
-  })();
+  introEl.innerHTML = (SITE.intro || []).map((p, i) => `<p style="--p:${i}">${p}</p>`).join("");
 
   const roll = txt => `<span class="roll">${[...txt].map((c, i) =>
     `<span class="ch" style="--i:${i}">${c}</span>`).join("")}</span>`;
   navList.innerHTML = SITE.sections.map((s, i) =>
-    `<a class="nav__item" href="#${s.id}" data-go="${s.id}" style="--i:${i}">` +
+    `<a class="nav__item" href="#${s.id}" data-go="${s.id}" style="--n:${i}">` +
     `<span class="nav__num">${ROMAN[i]}</span>${roll(s.label)}</a>`).join("");
 
   /* =====================================================================
@@ -85,6 +68,13 @@
      ===================================================================== */
   const rd = new TurningPattern(canvas, { texture: "assets/img/texture.jpg", texturePx: 760 });
   if (!rd.ok) root.classList.add("no-webgl");
+  // theme: <html data-theme="mono"> (black and white on paper) or "color".
+  // Try the other one without editing: …/index.html?theme=color
+  const MONO = root.dataset.theme !== "color";
+
+  // The layer behind is a pre-rendered, seamless tile (assets/img/pattern-tile.png)
+  // shown by CSS (#bgpat) — it costs nothing at runtime. JS only places it.
+  const bgEl = $("#bgpat");
   rd.onTexture = () => requestRender();
 
   const S = {
@@ -96,6 +86,7 @@
     fill: 0, fillT: 0,
     twistIntro: 0, twistIntroT: 0,
     ptr: 0, ptrT: 0,
+    ptrY: 0, ptrYT: 0,
     scroll: 0, scrollT: 0,
     turn: 0, turnT: 0,
     strips: [],
@@ -110,18 +101,20 @@
     const mobile = mqMobile.matches;
     const host = mobile ? stage : frame;
     if (canvas.parentNode !== host) host.prepend(canvas);
+    if (bgEl && bgEl.nextElementSibling !== canvas) host.insertBefore(bgEl, canvas);   // the layer behind sits under the canvas
     const n = mobile ? N_MOBILE : N_DESKTOP;
     if (n !== S.strips.length) {
       const p = (!mobile && current) ? 1 : 0;
       S.strips = makeStrips(n, p);
     }
     rd.ok && rd.resize();
+    placeBg();
   }
 
   function startSim() {
     if (!rd.ok || S.started) return;
     const r = stage.getBoundingClientRect();
-    const cell = clamp(r.width / 480, 1.6, 3.2) / DENSITY;
+    const cell = clamp(r.width / 480, 1.6, 3.2) / (mqMobile.matches ? Math.min(DENSITY, DENSITY_PHONE_MAX) : DENSITY);
     const W = Math.min(800, Math.round(r.width / cell)), H = Math.min(800, Math.round(r.height / cell));
     if (!rd.start(Math.max(64, W), Math.max(64, H), cell)) { root.classList.add("no-webgl"); return; }
     S.started = true;
@@ -168,9 +161,10 @@
     const gapPx = S.gap * clamp(home.h * .0056, 2.5, 6);
     const sh = (home.h - gapPx * (n - 1)) / n;
     const twist = S.twistIntro * 14 + S.ptr * 26;
+    const px = S.ptr * 34, py = S.ptrY * 20;     // the steel layer follows the mouse
     const rects = [];
     const sv = mobile ? null : relRect(sliver);
-    const oxHome = d => -home.x + twist * d + S.turn * (1 + d * .12) + S.scroll * (.16 + d * .03);
+    const oxHome = d => -home.x + px + twist * d + S.turn * (1 + d * .12) + S.scroll * (.16 + d * .03);
     const oxSliver = d => -home.x + twist * d * 1.6 + S.turn * (1 - d * .12) - S.scroll * .1;
 
     if (mobile) {
@@ -181,7 +175,7 @@
       let y = home.y;
       for (let i = 0; i < n; i++) {
         const h = usable * w(i) / sumW;
-        if (h > .5) rects.push({ x: home.x, y, w: home.w, h, ox: oxHome(i - mid * (1 - q)), oy: -home.y });
+        if (h > .5) rects.push({ x: home.x, y, w: home.w, h, ox: oxHome(i - mid * (1 - q)), oy: -home.y + py });
         y += h + g;
       }
       return rects;
@@ -189,14 +183,31 @@
     for (let i = 0; i < n; i++) {
       const d = i - mid, y = home.y + i * (sh + gapPx);
       const p = easeInOut(S.strips[i].p);
-      const x0 = lerp(home.x, sv.x, p), x1 = lerp(home.x + home.w, sv.x + sv.w, p);
-      rects.push({ x: x0, y, w: x1 - x0, h: sh, ox: lerp(oxHome(d), oxSliver(d), p), oy: -home.y });
+      if (p > .999) continue;
+      // the plate slides out to the left, carrying its pattern with it
+      const shift = p * (home.x + home.w + 40);
+      rects.push({ x: home.x - shift, y, w: home.w, h: sh, ox: oxHome(d) + shift, oy: -home.y + py * (1 - p) });
     }
     for (let i = 0; i < n; i++) {
       const d = i - mid, y = home.y + i * (sh + gapPx);
       rects.push({ x: sv.x, y, w: sv.w, h: sh, ox: oxSliver(d), oy: -home.y });
     }
     return rects;
+  }
+
+  // the layer behind fills the content area — from the left edge to the right
+  // strip, between the top and bottom of the strips. It never moves; the
+  // opacity falls off across the gutter so it is fainter behind the text.
+  function placeBg() {
+    if (!bgEl) return;
+    if (mqMobile.matches) { bgEl.style.cssText = ""; return; }
+    const r = relRect(stage), sv = relRect(sliver), t = relRect(introEl);
+    bgEl.style.left = "0px";
+    bgEl.style.top = r.y + "px";
+    bgEl.style.width = Math.max(0, sv.x - 4) + "px";
+    bgEl.style.height = r.h + "px";
+    bgEl.style.setProperty("--ramp-a", (r.x + r.w) + "px");
+    bgEl.style.setProperty("--ramp-b", Math.max(r.x + r.w + 1, t.x + 8) + "px");
   }
 
   /* --------------------------------------------------------------------
@@ -231,6 +242,7 @@
     moving = approach("fill", 0.9, dt) || moving;
     moving = approach("twistIntro", 1.6, dt) || moving;
     moving = approach("ptr", 2.4, dt) || moving;
+    moving = approach("ptrY", 2.4, dt) || moving;
     moving = approach("scroll", 6, dt) || moving;
     moving = approach("turn", 2.2, dt) || moving;
     moving = approach("single", 3.4, dt) || moving;
@@ -246,7 +258,7 @@
       if (rd.ok && S.started) {
         if (mqMobile.matches) rd.resize();
         const fill = S.fast ? smooth(1200, 3600, rd.steps) : Math.max(smooth(4000, 6200, rd.steps), S.fill);
-        rd.render(layout(), { fill });
+        rd.render(layout(), { fill, mono: MONO });
       }
       S.dirty = false;
     }
@@ -257,8 +269,8 @@
     const now = performance.now(), n = S.strips.length;
     S.strips.forEach((s, i) => {
       s.from = s.p; s.to = to; s.t0 = now;
-      s.dur = 1300;
-      s.delay = (to ? i : n - 1 - i) * 60;
+      s.dur = 1000;
+      s.delay = (to ? i : n - 1 - i) * 45;
     });
     kick();
   }
@@ -288,6 +300,7 @@
     root.classList.add("is-skip");
     S.fast = true;
     S.gapT = S.gap = 1; S.twistIntroT = S.twistIntro = 1;
+    root.classList.add("bg-in");
     startSim();
     waits.forEach(w => { clearTimeout(w.id); w.res(); });
     waits.clear();
@@ -308,6 +321,7 @@
 
     // layers separate and turn
     S.fillT = 1; S.gapT = 1; S.twistIntroT = 1; kick();
+    root.classList.add("bg-in");
     introEl.classList.add("is-in");
     await wait(900);
     navEl.classList.add("is-in");
@@ -364,15 +378,29 @@
         return `<article class="box box-text ${span}">${it.title ? `<h3>${it.title}</h3>` : ""}<div>${it.body || ""}</div></article>`;
       case "image":
         figN++;
-        return `<figure class="box ${span}"><div class="media" ${ratio}><img src="${esc(it.src)}" alt="${esc(it.alt)}" loading="lazy" decoding="async"></div>${cap(it)}</figure>`;
+        return `<figure class="box ${span}" ${ratio}><div class="media${/\.png$/i.test(it.src || "") ? " is-cutout" : ""}"><img src="${esc(it.src)}" alt="${esc(it.alt)}" loading="lazy" decoding="async"></div>${cap(it)}</figure>`;
+      case "carousel": {
+        const slides = (it.slides || []).filter(sl => sl.src);
+        if (!slides.length) return "";
+        const first = ++figN;
+        figN += slides.length - 1;
+        return `<figure class="box cz ${span}" data-fig="${first}" style="--ratio:${esc(it.ratio || "1800/1273")}">` +
+          `<div class="media" tabindex="0" aria-roledescription="carousel" aria-label="${slides.length} images">` +
+          `<div class="cz__track">${slides.map((sl, k) => `<div class="cz__slide" aria-label="${k + 1} of ${slides.length}"><img src="${esc(sl.src)}" alt="${esc(sl.alt)}" ${k ? 'loading="lazy"' : ""} decoding="async" draggable="false"></div>`).join("")}</div>` +
+          `<div class="cz__dots">${slides.map((_, k) => `<i class="${k ? "" : "on"}"></i>`).join("")}</div></div>` +
+          `<figcaption class="cz__foot"><div class="cz__cap"></div><span class="cz__count"></span>` +
+          `<button class="cz__btn" type="button" data-dir="-1" aria-label="Previous image">←</button>` +
+          `<button class="cz__btn" type="button" data-dir="1" aria-label="Next image">→</button></figcaption>` +
+          `<script type="application/json">${JSON.stringify(slides.map(sl => sl.caption || "")).replace(/</g, "\\u003c")}</script></figure>`;
+      }
       case "video": {
         figN++;
         const auto = it.autoplay ? "autoplay muted loop" : "controls";
-        return `<figure class="box ${span}"><div class="media" ${ratio}><video src="${esc(it.src)}" ${it.poster ? `poster="${esc(it.poster)}"` : ""} ${auto} playsinline preload="metadata"></video></div>${cap(it)}</figure>`;
+        return `<figure class="box ${span}" ${ratio}><div class="media"><video src="${esc(it.src)}" ${it.poster ? `poster="${esc(it.poster)}"` : ""} ${auto} playsinline preload="metadata"></video></div>${cap(it)}</figure>`;
       }
       case "embed":
         figN++;
-        return `<figure class="box ${span}"><div class="media" style="--ratio:${esc(it.ratio || "16/9")}"><iframe src="${esc(it.src)}" loading="lazy" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>${cap(it)}</figure>`;
+        return `<figure class="box ${span}" style="--ratio:${esc(it.ratio || "16/9")}"><div class="media"><iframe src="${esc(it.src)}" loading="lazy" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>${cap(it)}</figure>`;
       case "event": {
         const d = fmtDate(it.date, it.time);
         return `<article class="box event ${span} ${d.past ? "is-past" : ""}">` +
@@ -392,9 +420,14 @@
   }
 
   /* consecutive project boxes become one horizontally scrolling rail */
-  function itemsHTML(items) {
+  function itemsHTML(items, horiz) {
     let out = "", run = [];
-    const flush = () => { if (run.length) out += railHTML(run); run = []; };
+    const flush = () => {
+      if (!run.length) return;
+      // a horizontal section is already a sideways strip: cards go straight in, full height
+      out += horiz ? run.map((it, k) => cardHTML(it, k).replace('class="card', 'class="box card')).join("") : railHTML(run);
+      run = [];
+    };
     (items || []).forEach(it => {
       if (it.type === "project") run.push(it);
       else { flush(); out += boxHTML(it); }
@@ -460,21 +493,152 @@
     update();
   }
 
+  function initCarousel(cz) {
+    const view = $(".media", cz), track = $(".cz__track", cz), capEl = $(".cz__cap", cz),
+          count = $(".cz__count", cz), dots = cz.querySelectorAll(".cz__dots i"), btns = cz.querySelectorAll(".cz__btn");
+    let caps = [];
+    try { caps = JSON.parse($("script", cz).textContent); } catch (e) { /* no captions */ }
+    const n = track.children.length, fig0 = +cz.dataset.fig || 1;
+    let at = 0;
+    const show = (i, instant) => {
+      at = clamp(i, 0, n - 1);
+      if (instant) track.style.transition = "none";
+      track.style.transform = `translateX(${-at * 100}%)`;
+      if (instant) { void track.offsetWidth; track.style.transition = ""; }
+      capEl.innerHTML = `<span><span class="fig">fig. ${fig0 + at}</span>${caps[at] || ""}</span>`;
+      count.textContent = `${String(at + 1).padStart(2, "0")} / ${String(n).padStart(2, "0")}`;
+      dots.forEach((d, k) => d.classList.toggle("on", k === at));
+      btns[0].disabled = at === 0; btns[1].disabled = at === n - 1;
+      // load the neighbour before it is needed
+      const next = track.children[at + 1] && $("img", track.children[at + 1]);
+      if (next) next.loading = "eager";
+      S.turnT += 14; kick();      // a small turn of the strips with each slide
+    };
+    btns.forEach(b => b.addEventListener("click", () => show(at + +b.dataset.dir)));
+    view.addEventListener("keydown", e => {
+      if (e.key === "ArrowRight") { e.preventDefault(); show(at + 1); }
+      if (e.key === "ArrowLeft") { e.preventDefault(); show(at - 1); }
+    });
+    // drag / swipe
+    let x0 = null, y0 = 0, dx = 0, horiz = null;
+    view.addEventListener("pointerdown", e => {
+      if (e.button) return;
+      x0 = e.clientX; y0 = e.clientY; dx = 0; horiz = null;
+    });
+    view.addEventListener("pointermove", e => {
+      if (x0 == null) return;
+      dx = e.clientX - x0;
+      if (horiz == null && (Math.abs(dx) > 8 || Math.abs(e.clientY - y0) > 8)) {
+        horiz = Math.abs(dx) > Math.abs(e.clientY - y0);
+        if (horiz) { try { view.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ } view.classList.add("is-drag"); }
+      }
+      if (horiz) track.style.transform = `translateX(calc(${-at * 100}% + ${dx}px))`;
+    });
+    const end = () => {
+      if (x0 == null) return;
+      view.classList.remove("is-drag");
+      if (horiz) {
+        const w = view.clientWidth;
+        show(Math.abs(dx) > w * .15 ? at + (dx < 0 ? 1 : -1) : at);
+      }
+      x0 = null;
+    };
+    view.addEventListener("pointerup", end);
+    view.addEventListener("pointercancel", end);
+    show(0, true);
+  }
+
+  /* --------------------------------------------------------------------
+     Horizontal sections (layout: "horizontal" in content.js, desktop only):
+     the header stays put, everything else runs sideways at full height.
+     -------------------------------------------------------------------- */
+  // long text flows into columns; widen each text box to hold all of them
+  function sizeHText() {
+    panel.querySelectorAll(".htrack > .box-text").forEach(el => {
+      el.style.width = ""; el.style.columnCount = "";
+      if (mqMobile.matches) return;
+      const colW = el.clientWidth;
+      const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
+      const n = Math.max(1, Math.round((el.scrollWidth + gap) / (colW + gap)));
+      el.style.columnCount = n;
+      el.style.width = (n * colW + (n - 1) * gap) + "px";
+    });
+  }
+
+  function initHTrack() {
+    const track = $(".htrack", panel), bar = $(".hfoot .rail__bar", panel);
+    const btns = panel.querySelectorAll(".hfoot .rail__btn");
+    if (!track) return;
+    // lazy loading is unreliable inside a sideways scroller; there are few images, load them now
+    track.querySelectorAll("figure > .media img, .cz__slide:first-child img").forEach(img => { img.loading = "eager"; });
+    const update = () => {
+      const max = Math.max(1, track.scrollWidth - track.clientWidth);
+      bar.style.setProperty("--p", (clamp(track.scrollLeft / max, 0, 1) * 100).toFixed(2) + "%");
+      btns[0].disabled = track.scrollLeft < 2;
+      btns[1].disabled = track.scrollLeft > max - 2;
+      S.scrollT = track.scrollLeft * .5;
+      kick();
+    };
+    sizeHText();
+    requestAnimationFrame(() => { sizeHText(); update(); });
+    if (document.fonts) document.fonts.ready.then(() => { sizeHText(); update(); });
+    track.addEventListener("scroll", update, { passive: true });
+    btns.forEach(b => b.addEventListener("click", () =>
+      track.scrollBy({ left: track.clientWidth * .7 * +b.dataset.dir, behavior: "smooth" })));
+    // a vertical wheel scrolls sideways
+    track.addEventListener("wheel", e => {
+      if (mqMobile.matches) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (!d) return;
+      e.preventDefault();
+      track.scrollLeft += d;
+    }, { passive: false });
+    track.addEventListener("keydown", e => {
+      if (e.target.closest(".cz")) return;          // carousels use the arrows themselves
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        track.scrollBy({ left: track.clientWidth * .4 * (e.key === "ArrowRight" ? 1 : -1), behavior: "smooth" });
+      }
+    });
+    // drag with a mouse (not on carousels, links or video)
+    track.addEventListener("pointerdown", e => {
+      if (e.pointerType !== "mouse" || e.button || e.target.closest(".cz .media, a, button, video, iframe")) return;
+      hDrag = { track, x: e.clientX, s: track.scrollLeft, moved: false };
+    });
+    update();
+  }
+  let hDrag = null;
+  window.addEventListener("pointermove", e => {
+    if (!hDrag) return;
+    const dx = e.clientX - hDrag.x;
+    if (!hDrag.moved && Math.abs(dx) > 6) { hDrag.moved = true; hDrag.track.classList.add("is-drag"); }
+    if (hDrag.moved) hDrag.track.scrollLeft = hDrag.s - dx;
+  });
+  window.addEventListener("pointerup", () => { if (hDrag) hDrag.track.classList.remove("is-drag"); hDrag = null; });
+
   let io = null;
   function renderPanel(sec, waitMs) {
     figN = 0;
     railX = 0;
     const idx = SITE.sections.indexOf(sec);
     panel.style.setProperty("--wait", waitMs + "ms");
+    const horiz = sec.layout === "horizontal";
+    panel.classList.toggle("is-h", horiz);
     panel.innerHTML =
       `<header class="box phead"><h2><span class="num">${ROMAN[idx]}.</span>${sec.heading || sec.label}</h2>` +
       `<div class="phead__aside">${sec.lede ? `<p class="lede">${sec.lede}</p>` : "<span></span>"}` +
-      `<button class="close" type="button" data-go="">Close <span aria-hidden="true">×</span></button></div></header>` +
-      itemsHTML(sec.items);
+      `<button class="back" type="button" data-go=""><span class="arrow" aria-hidden="true">←</span>Back</button></div></header>` +
+      (horiz
+        ? `<div class="htrack" tabindex="0">${itemsHTML(sec.items, true)}</div>` +
+          `<div class="hfoot"><span class="hfoot__hint">Scroll</span><div class="rail__bar"><i></i></div>` +
+          `<button class="rail__btn" type="button" data-dir="-1" aria-label="Back">←</button>` +
+          `<button class="rail__btn" type="button" data-dir="1" aria-label="Forward">→</button></div>`
+        : itemsHTML(sec.items));
     panel.scrollTop = 0;
-    root.classList.remove("panel-scrolled");
     S.scrollT = 0;
     panel.querySelectorAll(".rail").forEach(initRail);
+    panel.querySelectorAll(".cz").forEach(initCarousel);
+    if (horiz) initHTrack();
 
     if (io) io.disconnect();
     io = new IntersectionObserver(entries => {
@@ -516,7 +680,7 @@
       root.classList.add("is-panel");
       const mobile = mqMobile.matches;
       if (!mobile) collapse(1);
-      renderPanel(sec, mobile ? 0 : 420);
+      renderPanel(sec, mobile ? 0 : 680);   // let the strips clear first
       if (mobile) { window.scrollTo({ top: 0 }); S.singleT = 1; }
     } else {
       panel.classList.add("is-leaving");
@@ -617,12 +781,12 @@
   window.addEventListener("pointermove", e => {
     if (mqMobile.matches || e.pointerType === "touch") return;
     S.ptrT = (e.clientX / innerWidth - .5) * 2;
+    S.ptrYT = (e.clientY / innerHeight - .5) * 2;
     kick();
   }, { passive: true });
 
   panel.addEventListener("scroll", () => {
     S.scrollT = panel.scrollTop + railX * .5;
-    root.classList.toggle("panel-scrolled", panel.scrollTop > 8);
     kick();
   }, { passive: true });
   window.addEventListener("scroll", () => {
@@ -633,6 +797,7 @@
 
   let rzT = 0;
   function onResize() {
+    if (panel.classList.contains("is-h")) requestAnimationFrame(sizeHText);
     if (!mqMobile.matches) { if (current) S.strips.forEach(s => { s.p = s.from = s.to = 1; }); }
     else root.classList.remove("side-open");
     S.single = S.singleT = current ? 1 : 0;
@@ -649,12 +814,89 @@
   }
 
   /* =====================================================================
+     6. A faint pattern grows under a resting cursor (or a tap on phones)
+     ===================================================================== */
+  (function idlePattern() {
+    const ENABLED = false;           // switched off — set to true to bring it back
+    const cv = document.getElementById("idle");
+    if (!ENABLED || !cv || reduced) return;
+    const SIZE = 380, CELL = 2, REST_MS = 2600, MAX_A = .6;
+    const TINT = [0.79, 0.76, 0.72];
+    let eng = null, state = "off", alpha = 0, target = 0, raf2 = 0, last2 = 0;
+    let timer = 0, px = -1, py = -1, ox = 0, oy = 0;
+
+    function engine() {
+      if (eng) return eng.ok ? eng : null;
+      eng = new TurningPattern(cv, { seed: 41, dotBias: .15, anisotropy: .45, threshold: .21 });
+      if (!eng.ok || !eng.start(SIZE / CELL, SIZE / CELL, CELL)) { eng.ok = false; return null; }
+      return eng;
+    }
+    function loop(now) {
+      raf2 = 0;
+      const dt = Math.min(.05, (now - last2) / 1000); last2 = now;
+      alpha += (target - alpha) * (1 - Math.exp(-(target > alpha ? 1.6 : 3.5) * dt));
+      if (state === "grow" && eng.steps < 2800 && !document.hidden) eng.step(7);
+      eng.resize();
+      eng.render([{ x: 0, y: 0, w: SIZE, h: SIZE, a: alpha }],
+        { tint: TINT, invert: true, vignette: [SIZE / 2, SIZE / 2, SIZE / 2] });
+      if (state === "fade" && alpha < .01) { state = "off"; cv.classList.remove("is-on"); return; }
+      if (state !== "off") raf2 = requestAnimationFrame(loop);
+    }
+    function start(x, y) {
+      if (root.classList.contains("is-intro") || !engine()) return;
+      eng.clear();
+      ox = x; oy = y;
+      cv.style.transform = `translate(${Math.round(x - SIZE / 2)}px, ${Math.round(y - SIZE / 2)}px)`;
+      const c = SIZE / CELL / 2;
+      eng.seed(c, c, 3);
+      for (let k = 0; k < 5; k++) eng.seed(c + Math.cos(k * 1.257) * 7, c + Math.sin(k * 1.257) * 7, 2);
+      alpha = 0; target = MAX_A; state = "grow";
+      cv.classList.add("is-on");
+      if (!raf2) { last2 = performance.now(); raf2 = requestAnimationFrame(loop); }
+    }
+    function stop() {
+      if (state === "off" || state === "fade") return;
+      state = "fade"; target = 0;
+      if (!raf2) { last2 = performance.now(); raf2 = requestAnimationFrame(loop); }
+    }
+
+    // mouse: rest for a moment and it begins; move away and it fades
+    window.addEventListener("pointermove", e => {
+      if (e.pointerType !== "mouse") return;
+      px = e.clientX; py = e.clientY;
+      if (state === "grow" && Math.hypot(px - ox, py - oy) > 8) stop();
+      clearTimeout(timer);
+      timer = setTimeout(() => start(px, py), REST_MS);
+    }, { passive: true });
+    document.addEventListener("mouseleave", () => { clearTimeout(timer); stop(); });
+    // scrolling with the wheel is not resting
+    window.addEventListener("wheel", () => {
+      stop(); clearTimeout(timer);
+      if (px >= 0) timer = setTimeout(() => start(px, py), REST_MS);
+    }, { passive: true });
+    window.addEventListener("blur", () => { clearTimeout(timer); stop(); });
+
+    // touch: a tap on an empty spot starts it there
+    let down = null;
+    window.addEventListener("pointerdown", e => { if (e.pointerType !== "mouse") down = { x: e.clientX, y: e.clientY }; }, { passive: true });
+    window.addEventListener("pointerup", e => {
+      if (e.pointerType === "mouse" || !down) return;
+      const tap = Math.hypot(e.clientX - down.x, e.clientY - down.y) < 10;
+      down = null;
+      if (!tap || e.target.closest("a, button, input, textarea, select, video, iframe, .media, .rail__track, .nav")) return;
+      start(e.clientX, e.clientY);
+    }, { passive: true });
+    window.addEventListener("scroll", () => { if (down === null) stop(); }, { passive: true });
+  })();
+
+  /* =====================================================================
      Go
      ===================================================================== */
   placeCanvas();
   const startHash = location.hash.replace(/^#/, "");
   const begin = () => {
     if (startHash) skipping = true;      // deep link: skip the long intro
+    placeBg();
     intro().then(() => { if (startHash) route(); });
   };
   (document.fonts && document.fonts.ready ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1200))]) : Promise.resolve())
