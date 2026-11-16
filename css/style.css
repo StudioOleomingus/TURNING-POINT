@@ -206,6 +206,8 @@ button { font: inherit; color: inherit; }
   -webkit-hyphens: auto;
   hanging-punctuation: first last;
 }
+/* spacers that keep the text clear of the blocks stepping out of the pattern column (sized in main.js) */
+.intro i.wrap { float: left; clear: left; width: 0; height: 0; }
 .sc { font-variant-caps: all-small-caps; letter-spacing: .06em; font-weight: 600; color: var(--gold); }
 .intro a[data-go] {
   white-space: nowrap;

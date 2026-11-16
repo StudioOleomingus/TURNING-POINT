@@ -20,7 +20,9 @@
      rd.start(simW, simH, cellPx);
      rd.seed(x, y, radius);        // cell units
      rd.step(n);
-     rd.render(rects, { fill });   // rects: [{x,y,w,h, ox,oy, tx,ty, a}]
+     rd.render(rects, { fill });   // rects: [{x,y,w,h, ox,oy, tx,ty, a, style, zoom}]
+     per rect: style 0 = steel texture, 1 = ink outlines, 2 = clay relief
+     with ambient occlusion; zoom > 1 shows the pattern smaller (denser).
      options: clear:false draws over what is there; tint:[r,g,b] uses a
      flat colour; invert:true draws the cut shapes; vignette:[x,y,r];
      ramp:[x0,x1,a0,a1] fades opacity from a0 to a1 between x0 and x1;
@@ -36,7 +38,7 @@
   void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
   const MAX_SEEDS = 32;
-  const MAX_RECTS = 24;
+  const MAX_RECTS = 60;
 
   const SIM_FS = `#version 300 es
   precision highp float;
@@ -120,7 +122,7 @@
   uniform int   uMono;     // 1 = black and white
   uniform vec4  uRects[${MAX_RECTS}];  // x0,y0,x1,y1 (css px)
   uniform vec4  uOffs[${MAX_RECTS}];   // pattern offset xy (css px), texture offset zw (uv)
-  uniform float uAlpha[${MAX_RECTS}];
+  uniform vec4  uStyle[${MAX_RECTS}];  // style (0 steel, 1 outline, 2 clay), zoom, opacity
   uniform int   uCount;
   out vec4 o;
 
@@ -156,8 +158,10 @@
     if (idx < 0) { o = vec4(0.0); return; }
 
     vec4 of = uOffs[idx];
+    vec4 sty = uStyle[idx];
     vec2 q = p + of.xy;                 // pattern space, css px
-    vec4 st = samp(q / uCell);
+    vec2 sc = q * sty.y / uCell;        // sim cells (zoom > 1: more pattern per px)
+    vec4 st = samp(sc);
     float B = st.g;
     float vis = clamp(max(st.b, uFill), 0.0, 1.0);
 
@@ -185,9 +189,38 @@
     }
 
     float shape = uInvert == 1 ? cut : vis * (1.0 - cut);
+    if (sty.x > 1.5) {
+      // clay: the plate as a soft relief (cuts are recesses), lit from the upper
+      // left, with ambient occlusion gathering in the channels and along walls
+      #define HGT(c) (1.0 - smoothstep(uThresh - 0.09, uThresh + 0.09, samp(c).g))
+      float h  = HGT(sc);
+      float hl = HGT(sc - vec2(1.0, 0.0)), hr = HGT(sc + vec2(1.0, 0.0));
+      float hu = HGT(sc - vec2(0.0, 1.0)), hd = HGT(sc + vec2(0.0, 1.0));
+      vec3 nrm = normalize(vec3((hl - hr) * 1.5, (hu - hd) * 1.5, 1.0));
+      float dif = max(dot(nrm, normalize(vec3(-0.55, -0.65, 0.6))), 0.0);
+      float near = 0.0, far = 0.0;
+      for (int k = 0; k < 6; k++) {
+        float a = float(k) * 1.0472;
+        vec2 dir = vec2(cos(a), sin(a));
+        near += HGT(sc + dir * 2.5);
+        far  += HGT(sc + dir * 6.0);
+      }
+      float occ = max(0.0, near / 6.0 - h) * 0.65 + max(0.0, far / 6.0 - h) * 0.5;
+      float ao = 1.0 - clamp(occ, 0.0, 0.8);
+      ao *= mix(0.86, 1.0, h);                          // the floor sits in shade
+      col = vec3(0.90, 0.87, 0.81) * (0.50 + 0.62 * dif) * ao;
+      if (uMono == 1) col = vec3(dot(col, vec3(0.299, 0.587, 0.114)));
+      shape = vis;
+    } else if (sty.x > 0.5) {
+      // outline: an ink line along the edge of every cut
+      float g = max(fwidth(B), 1e-5);
+      float dpx = abs(B - uThresh) / g;                 // distance to the edge, device px
+      shape = vis * (1.0 - smoothstep(0.55 * uDpr, 0.55 * uDpr + 1.0, dpx));
+      col = vec3(0.13, 0.13, 0.12);
+    }
     if (uVig.z > 0.0) shape *= 1.0 - smoothstep(uVig.z * 0.4, uVig.z, distance(p, uVig.xy));
     if (uRamp.y > uRamp.x) shape *= mix(uRamp.z, uRamp.w, smoothstep(uRamp.x, uRamp.y, p.x));
-    float a = shape * uAlpha[idx];
+    float a = shape * sty.z;
     o = vec4(col * a, a);
   }`;
 
@@ -435,12 +468,12 @@
       if (!this.ok || !this.a) return;
       const gl = this.gl, P = this.draw;
       const n = Math.min(rects.length, MAX_RECTS);
-      const R = new Float32Array(MAX_RECTS * 4), O = new Float32Array(MAX_RECTS * 4), A = new Float32Array(MAX_RECTS);
+      const R = new Float32Array(MAX_RECTS * 4), O = new Float32Array(MAX_RECTS * 4), A = new Float32Array(MAX_RECTS * 4);
       for (let i = 0; i < n; i++) {
         const r = rects[i];
         R.set([r.x, r.y, r.x + Math.max(0, r.w), r.y + Math.max(0, r.h)], i * 4);
         O.set([r.ox || 0, r.oy || 0, r.tx || 0, r.ty || 0], i * 4);
-        A[i] = r.a == null ? 1 : r.a;
+        A.set([r.style || 0, r.zoom || 1, r.a == null ? 1 : r.a, 0], i * 4);
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, this.canvas.width, this.canvas.height);
@@ -490,7 +523,7 @@
       gl.uniform1i(P.u.uMono, o.mono ? 1 : 0);
       gl.uniform4fv(P.u.uRects, R);
       gl.uniform4fv(P.u.uOffs, O);
-      gl.uniform1fv(P.u.uAlpha, A);
+      gl.uniform4fv(P.u.uStyle, A);
       gl.uniform1i(P.u.uCount, n);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       gl.disable(gl.SCISSOR_TEST);
