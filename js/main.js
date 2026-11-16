@@ -32,7 +32,7 @@
   const esc = s => String(s == null ? "" : s).replace(/"/g, "&quot;");
 
   /* Pattern density: 1 = original grain; 1.2 = 20% denser */
-  let DENSITY = 1.2;
+  let DENSITY = 1.3;
   // try another value without editing: …/index.html?density=1.4
   { const q = parseFloat(new URLSearchParams(location.search).get("density")); if (q > 0.3 && q < 4) DENSITY = q; }
   // phones: past ~1.5 the cuts get too thin to read on a small screen, and the grid gets heavy
@@ -109,6 +109,7 @@
     }
     rd.ok && rd.resize();
     placeBg();
+    placeWraps();
   }
 
   function startSim() {
@@ -152,47 +153,135 @@
     return { x: r.left - c.left, y: r.top - c.top, w: r.width, h: r.height };
   }
 
+  /* The rows are cut into blocks on a grid of squares: squares, rectangles
+     (two squares across or down) and L shapes (three squares, over two rows).
+     A block has a style (0 steel texture, 1 ink outlines, 2 clay relief), a
+     zoom (above 1 = the pattern drawn smaller, so denser) and a depth k: how
+     far it travels with the mouse. On wide screens two more blocks step out
+     of the column to the right: an outline block beside the top row and a
+     steel block beside the second-last row (the intro text wraps round them).
+     The plan depends only on the grid's size, so it is stable. */
+  const TILE_STYLES = [0, 0, 0, 0, 1, 1, 2, 2];          // the mix: edit to taste
+  const TILE_ZOOMS = [1, 1, 1, 1.5, 2, 2.4];
+  const TILE_GAP = .4;                                    // gaps between blocks, × the original row gap
+  const gridPlans = {};
+  function gridPlan(rows, units, extras) {
+    const key = rows + ":" + units + ":" + extras;
+    if (gridPlans[key]) return gridPlans[key];
+    let s = (rows * 7919 + units * 104729 + 31) >>> 0;
+    const R = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const used = Array.from({ length: rows }, () => new Array(units).fill(false));
+    const free = (r, c) => r >= 0 && r < rows && c >= 0 && c < units && !used[r][c];
+    const H = (c, r) => ({ c, r, cw: 2, rh: 1 }), V = (c, r) => ({ c, r, cw: 1, rh: 2 }), Q = (c, r) => ({ c, r, cw: 1, rh: 1 });
+    const blocks = [];
+    let last = -1;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < units; c++) {
+      if (!free(r, c)) continue;
+      const right = free(r, c + 1), down = free(r + 1, c), x = R();
+      let parts = null;
+      if (x < .22) {                                      // L shapes, whichever way fits
+        const fits = [];
+        if (right && down) fits.push([H(c, r), V(c, r)]);
+        if (right && free(r + 1, c + 1)) fits.push([H(c, r), V(c + 1, r)]);
+        if (down && free(r + 1, c + 1)) fits.push([V(c, r), H(c, r + 1)]);
+        if (down && free(r + 1, c - 1)) fits.push([V(c, r), H(c - 1, r + 1)]);
+        if (fits.length) parts = fits[Math.floor(R() * fits.length)];
+      }
+      if (!parts && x < .46 && right) parts = [H(c, r)];
+      if (!parts && x < .58 && down) parts = [V(c, r)];
+      if (!parts) parts = [Q(c, r)];
+      for (const q of parts) for (let i = 0; i < q.cw; i++) for (let j = 0; j < q.rh; j++) used[q.r + j][q.c + i] = true;
+      let style = TILE_STYLES[Math.floor(R() * TILE_STYLES.length)];
+      if (style === last && style !== 0) style = 0;      // no two outline or clay blocks in a row
+      let zoom = TILE_ZOOMS[Math.floor(R() * TILE_ZOOMS.length)];
+      if (style === 1) zoom = Math.min(zoom, 1.5);       // fine outlines turn to noise when very small
+      blocks.push({ row: r, parts, style, zoom, k: (.55 + R() * 1.1) / Math.sqrt(zoom) });
+      last = style;
+    }
+    if (extras) {
+      blocks.push({ row: 0, parts: [Q(units, 0)], style: 1, zoom: 1, k: .8 });
+      blocks.push({ row: rows - 2, parts: [Q(units, rows - 2)], style: 0, zoom: 1.5, k: 1.25 });
+    }
+    return (gridPlans[key] = blocks);
+  }
+  const gridUnits = (w, h, gap) => clamp(Math.round((w + gap) / (h + gap)), 2, 8);
+
   function layout() {
     if (!rd.ok || !S.started) return [];
     const mobile = mqMobile.matches;
     const home = relRect(stage);
     if (home.h < 1 || home.w < 1) return [];
     const n = S.strips.length, mid = (n - 1) / 2;
-    const gapPx = S.gap * clamp(home.h * .0056, 2.5, 6);
+    const gapPx = S.gap * clamp(home.h * .0056, 2.5, 6) * TILE_GAP;
     const sh = (home.h - gapPx * (n - 1)) / n;
     const twist = S.twistIntro * 14 + S.ptr * 26;
     const px = S.ptr * 34, py = S.ptrY * 20;     // the steel layer follows the mouse
     const rects = [];
-    const sv = mobile ? null : relRect(sliver);
     const oxHome = d => -home.x + px + twist * d + S.turn * (1 + d * .12) + S.scroll * (.16 + d * .03);
     const oxSliver = d => -home.x + twist * d * 1.6 + S.turn * (1 - d * .12) - S.scroll * .1;
 
+    // each row: where it is, how far it has slid away, and its pattern offset
+    const rows = [];
+    let g = gapPx;
     if (mobile) {
       // the first layer grows to fill the band while the others fold away
       const q = S.single, w = i => (i === 0 ? 1 : 1 - q);
       let sumW = 0; for (let i = 0; i < n; i++) sumW += w(i);
-      const g = gapPx * (1 - q), usable = home.h - g * (n - 1);
+      g = gapPx * (1 - q);
+      const usable = home.h - g * (n - 1);
       let y = home.y;
       for (let i = 0; i < n; i++) {
         const h = usable * w(i) / sumW;
-        if (h > .5) rects.push({ x: home.x, y, w: home.w, h, ox: oxHome(i - mid * (1 - q)), oy: -home.y + py });
+        rows.push({ y, h, shift: 0, ox: oxHome(i - mid * (1 - q)), oy: -home.y + py, m: 1, on: h > .5 });
         y += h + g;
       }
-      return rects;
+    } else {
+      const sv = relRect(sliver);
+      for (let i = 0; i < n; i++) {
+        const d = i - mid, y = home.y + i * (sh + gapPx);
+        rects.push({ x: sv.x, y, w: sv.w, h: sh, ox: oxSliver(d), oy: -home.y });
+        const p = easeInOut(S.strips[i].p);
+        // the plate slides out to the left, carrying its pattern with it
+        const shift = p * (home.x + home.w + sh + 60);
+        rows.push({ y, h: sh, shift, ox: oxHome(d) + shift, oy: -home.y + py * (1 - p), m: 1 - p, on: p <= .999 });
+      }
     }
-    for (let i = 0; i < n; i++) {
-      const d = i - mid, y = home.y + i * (sh + gapPx);
-      const p = easeInOut(S.strips[i].p);
-      if (p > .999) continue;
-      // the plate slides out to the left, carrying its pattern with it
-      const shift = p * (home.x + home.w + 40);
-      rects.push({ x: home.x - shift, y, w: home.w, h: sh, ox: oxHome(d) + shift, oy: -home.y + py * (1 - p) });
-    }
-    for (let i = 0; i < n; i++) {
-      const d = i - mid, y = home.y + i * (sh + gapPx);
-      rects.push({ x: sv.x, y, w: sv.w, h: sh, ox: oxSliver(d), oy: -home.y });
+    const units = gridUnits(home.w, sh, gapPx);
+    const uw = (home.w - gapPx * (units - 1)) / units;
+    for (const b of gridPlan(n, units, !mobile)) {
+      const row = rows[b.row];                   // a block moves with the row it starts in
+      if (!row.on) continue;
+      for (const q of b.parts) {
+        const a = rows[q.r], z = rows[q.r + q.rh - 1];
+        if (!a.on) continue;
+        rects.push({
+          x: home.x + q.c * (uw + gapPx) - row.shift, y: a.y, w: q.cw * (uw + gapPx) - gapPx, h: z.y + z.h - a.y,
+          ox: row.ox + px * row.m * (b.k - 1), oy: row.oy + py * row.m * (b.k - 1), style: b.style, zoom: b.zoom
+        });
+      }
     }
     return rects;
+  }
+
+  // the intro text makes room for the two blocks that step out of the column
+  function placeWraps() {
+    let w = introEl.querySelectorAll("i.wrap");
+    if (!w.length) {
+      introEl.insertAdjacentHTML("afterbegin", '<i class="wrap"></i><i class="wrap"></i><i class="wrap"></i>');
+      w = introEl.querySelectorAll("i.wrap");
+    }
+    const set = (el, wd, ht) => { el.style.width = Math.max(0, wd) + "px"; el.style.height = Math.max(0, ht) + "px"; };
+    const s = stage.getBoundingClientRect(), t = introEl.getBoundingClientRect();
+    if (mqMobile.matches || s.height < 1) { w.forEach(el => set(el, 0, 0)); return; }
+    const n = S.strips.length, g = clamp(s.height * .0056, 2.5, 6) * TILE_GAP, sh = (s.height - g * (n - 1)) / n;
+    const units = gridUnits(s.width, sh, g), uw = (s.width - g * (units - 1)) / units;
+    const top = t.top + parseFloat(getComputedStyle(introEl).paddingTop) - introEl.scrollTop;
+    const wd = s.right + g + uw - t.left + 16, pad = 10;
+    const hA = Math.max(0, s.top + sh + pad - top);
+    const yB = s.top + (n - 2) * (sh + g) - pad;
+    set(w[0], wd, hA);
+    set(w[1], 0, yB - top - hA);
+    set(w[2], wd, sh + 2 * pad);
   }
 
   // the layer behind fills the content area — from the left edge to the right

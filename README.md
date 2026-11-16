@@ -133,6 +133,16 @@ you like, and commit.
 ## Changing the look of the pattern
 
 * **Steel texture:** replace `assets/img/texture.jpg` (square, ~900–1200 px).
+* **Blocks:** the rows are cut into blocks on a grid of squares: squares,
+  rectangles and L shapes. Every block draws the same growing pattern in one
+  of three ways (steel texture, ink outlines, or a clay relief with ambient
+  occlusion), at its own zoom (above 1 = smaller and denser), and travels its
+  own distance with the mouse. On wide screens two more blocks step out of
+  the column to the right (an outline block beside the top row, a steel block
+  beside the second-last row) and the intro text wraps round them. The mix is
+  set by `TILE_STYLES` and `TILE_ZOOMS` in `js/main.js` (repeat an entry to
+  make it more likely), the gaps by `TILE_GAP`, the shapes and the two extra
+  blocks in `gridPlan`. The layout is fixed for a given screen shape.
 * **Density:** `DENSITY` at the top of `js/main.js` (1 = the first version,
   2 = twice as fine). Try values without editing by adding `?density=1.5` to
   the address. Phones are capped at `DENSITY_PHONE_MAX` (1.5): finer cuts
