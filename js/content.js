@@ -8,6 +8,14 @@
 window.SITE = {
   "title": "Turning Point",
   "meta": "",
+  "preface": {
+    "lead": "When does a fleeting thought become a tangible form?",
+    "paragraphs": [
+      "Inspired by Tat-Tvam-Asi (\"I am That\"), the Turning Point project bridges the eternal and the transient, dissolving individual authorship into collective creation. Much like wave-particle duality, the process moves between control and surrender—riding the fluid wave of ideas before shaping them into physical reality.",
+      "Through trust, materiality, and shared inquiry, learning becomes a living negotiation. Here, process and meaning merge, inviting us to witness how we shape the world as it shapes us."
+    ],
+    "button": "Enter"
+  },
   "intro": [
     "<span class='sc'>Turning Point</span> is an installation project by Anant University, created for the Delhi Art Biennale 2026.",
     "At its core is a physical structure made of four spiraling steel columns that are held together in dynamic balance. Each 6 meter tall column rotates gradually from the base and is imbricated with patterns of emergent life-processes.",

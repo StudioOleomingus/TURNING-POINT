@@ -385,6 +385,17 @@
       h("textarea", { rows: 3, value: p, oninput: e => { data.intro[i] = e.target.value; setDirty(); } }), ctl(data.intro, i)))));
     main.append(h("div", { class: "addbar" }, h("button", { class: "btn small", onclick: () => { data.intro.push(""); setDirty(); renderMain(); } }, "+ Add paragraph")));
 
+    main.append(h("hr"), h("h3", {}, "Opening text — shown before the site, until the button is pressed"),
+      h("p", { class: "sub" }, "Leave the first line and the paragraphs empty to go straight to the site."));
+    data.preface = data.preface || { lead: "", paragraphs: [], button: "Enter" };
+    data.preface.paragraphs = data.preface.paragraphs || [];
+    main.append(h("div", { class: "grid" },
+      fieldEl(data.preface, "lead", "text", "First line (large)"),
+      fieldEl(data.preface, "button", "text", "Button label")));
+    main.append(h("div", { class: "list" }, data.preface.paragraphs.map((p, i) => h("div", { class: "row" },
+      h("textarea", { rows: 4, value: p, oninput: e => { data.preface.paragraphs[i] = e.target.value; setDirty(); } }), ctl(data.preface.paragraphs, i)))));
+    main.append(h("div", { class: "addbar" }, h("button", { class: "btn small", onclick: () => { data.preface.paragraphs.push(""); setDirty(); renderMain(); } }, "+ Add paragraph")));
+
     main.append(h("hr"), h("h3", {}, "Social links (shown beside the title)"));
     data.socials = data.socials || [];
     main.append(fieldEl(data, "socials", "pairs:label:url", " "));

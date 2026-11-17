@@ -14,3 +14,4 @@ explorations/
   metamorphosis/           BUILT copy of the three.js prototype 
   confluence/ flux/ emergence/   placeholder pages to build in
   _template/               copy this to start a new exploration
+.nojekyll                  tells GitHub Pages to serve files untouched

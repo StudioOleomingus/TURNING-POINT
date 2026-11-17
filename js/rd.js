@@ -20,7 +20,7 @@
      rd.start(simW, simH, cellPx);
      rd.seed(x, y, radius);        // cell units
      rd.step(n);
-     rd.render(rects, { fill });   // rects: [{x,y,w,h, ox,oy, tx,ty, a, style, zoom}]
+     rd.render(rects, { fill });   // rects: [{x,y,w,h, ox,oy, tx,ty, a, style, zoom}]; any number (drawn in batches)
      per rect: style 0 = steel texture, 1 = ink outlines, 2 = clay relief
      with ambient occlusion; zoom > 1 shows the pattern smaller (denser).
      options: clear:false draws over what is there; tint:[r,g,b] uses a
@@ -466,6 +466,12 @@
      */
     render(rects, o = {}) {
       if (!this.ok || !this.a) return;
+      // more rects than one pass holds: draw them in batches, each over the last
+      if (rects.length > MAX_RECTS) {
+        for (let i = 0; i < rects.length; i += MAX_RECTS)
+          this.render(rects.slice(i, i + MAX_RECTS), i ? Object.assign({}, o, { clear: false }) : o);
+        return;
+      }
       const gl = this.gl, P = this.draw;
       const n = Math.min(rects.length, MAX_RECTS);
       const R = new Float32Array(MAX_RECTS * 4), O = new Float32Array(MAX_RECTS * 4), A = new Float32Array(MAX_RECTS * 4);
