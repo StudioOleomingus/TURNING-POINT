@@ -154,27 +154,79 @@
   }
 
   /* The rows are cut into blocks on a grid of squares: squares, rectangles
-     (two squares across or down) and L shapes (three squares, over two rows).
-     A block has a style (0 steel texture, 1 ink outlines, 2 clay relief), a
-     zoom (above 1 = the pattern drawn smaller, so denser) and a depth k: how
-     far it travels with the mouse. On wide screens two more blocks step out
-     of the column to the right: an outline block beside the top row and a
-     steel block beside the second-last row (the intro text wraps round them).
-     The plan depends only on the grid's size, so it is stable. */
-  const TILE_STYLES = [0, 0, 0, 0, 1, 1, 2, 2];          // the mix: edit to taste
+     (two squares across or down) and L shapes (three squares, over two rows),
+     with no gaps between them. Every square is subdivided into TILE_SUB ×
+     TILE_SUB smaller squares, and TILE_EMPTY of those are left out: bitten out
+     of the area's edges, bar a few in the middle (shapeMask). Blocks are the steel texture at different zooms (above 1 =
+     the pattern drawn smaller, so denser), except two drawn as ink outlines.
+     Each block travels its own distance with the mouse (k). On wide screens
+     two more blocks step out of the column to the right: an outline block
+     beside the top row and a steel block beside the second-last row (the
+     intro text wraps round them). The right-hand strip is cut the same way.
+     The plan is drawn anew on each visit and then stays put. */
   const TILE_ZOOMS = [1, 1, 1, 1.5, 2, 2.4];
-  const TILE_GAP = .4;                                    // gaps between blocks, × the original row gap
+  const TILE_GAP = 0;                                     // gaps between blocks, × the original row gap
+  const TILE_SUB = 2;                                     // each square → TILE_SUB × TILE_SUB smaller squares
+  const TILE_EMPTY = .3;                                  // share of the smaller squares left empty
+  const TILE_INNER = [2, 3];                              // how many of those sit in the middle (min, max); the rest bite into the edges
+  const PLAN_SEED = (Math.random() * 4294967296) >>> 0;   // a new arrangement on each visit
+  const planRng = key => {
+    let s = PLAN_SEED;
+    for (const ch of key) s = (Math.imul(s ^ ch.charCodeAt(0), 2654435761) + 1013904223) >>> 0;
+    return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  };
+  // which of a block part's smaller squares are kept: exactly TILE_EMPTY of them go
+  function holes(R, cols, rows) {
+    const n = cols * rows, keep = new Array(n).fill(true), idx = [...Array(n).keys()];
+    for (let i = n - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+    for (let i = 0; i < Math.round(n * TILE_EMPTY); i++) keep[idx[i]] = false;
+    return keep;
+  }
+  /* The pattern area's outline: the empty squares are bitten out of its edges,
+     each bite likelier beside an earlier one and unlikelier the deeper it goes,
+     so the area takes a different ragged shape each visit; TILE_INNER more are
+     scattered singly in the middle. Returns rows of booleans: true = kept. */
+  function shapeMask(R, cols, rows) {
+    const keep = Array.from({ length: rows }, () => new Array(cols).fill(true));
+    const depth = (i, j) => Math.min(i, j, cols - 1 - i, rows - 1 - j);
+    const gone = (i, j) => i < 0 || j < 0 || i >= cols || j >= rows || !keep[j][i];
+    const total = Math.round(cols * rows * TILE_EMPTY);
+    const inner = Math.min(total, TILE_INNER[0] + Math.floor(R() * (TILE_INNER[1] - TILE_INNER[0] + 1)));
+    for (let k = 0; k < total - inner; k++) {
+      let sum = 0; const cand = [];
+      for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+        if (!keep[j][i]) continue;
+        const open = gone(i - 1, j) + gone(i + 1, j) + gone(i, j - 1) + gone(i, j + 1);
+        if (!open) continue;                              // only squares on the current outline
+        const w = (1 + open) / Math.pow(1 + depth(i, j), 2.2);
+        cand.push([i, j, w]); sum += w;
+      }
+      let x = R() * sum, pick = cand[cand.length - 1];
+      for (const c of cand) { x -= c[2]; if (x <= 0) { pick = c; break; } }
+      keep[pick[1]][pick[0]] = false;
+    }
+    // a few single holes in the middle, apart from each other and from the bites
+    const deep = Math.max(2, Math.floor(Math.min(cols, rows) / 4));
+    for (let k = 0, tries = 0; k < inner && tries < 400; tries++) {
+      const i = Math.floor(R() * cols), j = Math.floor(R() * rows);
+      if (depth(i, j) < deep || !keep[j][i]) continue;
+      let clear = true;
+      for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) if (gone(i + a, j + b)) clear = false;
+      if (!clear) continue;
+      keep[j][i] = false; k++;
+    }
+    return keep;
+  }
+  const withHoles = (R, q) => Object.assign(q, { keep: holes(R, q.cw * TILE_SUB, q.rh * TILE_SUB) });
   const gridPlans = {};
   function gridPlan(rows, units, extras) {
     const key = rows + ":" + units + ":" + extras;
     if (gridPlans[key]) return gridPlans[key];
-    let s = (rows * 7919 + units * 104729 + 31) >>> 0;
-    const R = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const R = planRng("grid" + key);
     const used = Array.from({ length: rows }, () => new Array(units).fill(false));
     const free = (r, c) => r >= 0 && r < rows && c >= 0 && c < units && !used[r][c];
     const H = (c, r) => ({ c, r, cw: 2, rh: 1 }), V = (c, r) => ({ c, r, cw: 1, rh: 2 }), Q = (c, r) => ({ c, r, cw: 1, rh: 1 });
     const blocks = [];
-    let last = -1;
     for (let r = 0; r < rows; r++) for (let c = 0; c < units; c++) {
       if (!free(r, c)) continue;
       const right = free(r, c + 1), down = free(r + 1, c), x = R();
@@ -191,20 +243,49 @@
       if (!parts && x < .58 && down) parts = [V(c, r)];
       if (!parts) parts = [Q(c, r)];
       for (const q of parts) for (let i = 0; i < q.cw; i++) for (let j = 0; j < q.rh; j++) used[q.r + j][q.c + i] = true;
-      let style = TILE_STYLES[Math.floor(R() * TILE_STYLES.length)];
-      if (style === last && style !== 0) style = 0;      // no two outline or clay blocks in a row
-      let zoom = TILE_ZOOMS[Math.floor(R() * TILE_ZOOMS.length)];
-      if (style === 1) zoom = Math.min(zoom, 1.5);       // fine outlines turn to noise when very small
-      blocks.push({ row: r, parts, style, zoom, k: (.55 + R() * 1.1) / Math.sqrt(zoom) });
-      last = style;
+      const zoom = TILE_ZOOMS[Math.floor(R() * TILE_ZOOMS.length)];
+      blocks.push({ row: r, parts, style: 0, zoom, k: (.55 + R() * 1.1) / Math.sqrt(zoom) });
+    }
+    // which smaller squares are empty: decided over the whole area, not block by block
+    const mask = shapeMask(R, units * TILE_SUB, rows * TILE_SUB);
+    for (const b of blocks) for (const q of b.parts) {
+      const cols = q.cw * TILE_SUB, rws = q.rh * TILE_SUB;
+      q.keep = Array.from({ length: cols * rws }, (_, t) => mask[q.r * TILE_SUB + Math.floor(t / cols)][q.c * TILE_SUB + t % cols]);
+    }
+    // two outline blocks in all: one in the column plus the one beside it on wide screens
+    const outlines = extras ? 1 : 2, pick = [...blocks.keys()];
+    for (let i = 0; i < outlines && pick.length; i++) {
+      const b = blocks[pick.splice(Math.floor(R() * pick.length), 1)[0]];
+      b.style = 1; b.zoom = Math.min(b.zoom, 1.5);       // fine outlines turn to noise when very small
     }
     if (extras) {
-      blocks.push({ row: 0, parts: [Q(units, 0)], style: 1, zoom: 1, k: .8 });
-      blocks.push({ row: rows - 2, parts: [Q(units, rows - 2)], style: 0, zoom: 1.5, k: 1.25 });
+      // dx: these sit past the simulated area's edge, where the pattern is sparse, so
+      // they borrow the pattern from inside the column (dx, dy: fractions of its size)
+      blocks.push({ row: 0, parts: [withHoles(R, Q(units, 0))], style: 1, zoom: 1.5, k: .8, dx: -.55, dy: .5 });
+      blocks.push({ row: rows - 2, parts: [withHoles(R, Q(units, rows - 2))], style: 0, zoom: 1.5, k: 1.25, dx: -.4 });
     }
     return (gridPlans[key] = blocks);
   }
   const gridUnits = (w, h, gap) => clamp(Math.round((w + gap) / (h + gap)), 2, 8);
+  // the right-hand strip: each row is a run of squares, subdivided and thinned the same way
+  const sliverPlans = {};
+  function sliverPlan(rows, units) {
+    const key = rows + ":" + units;
+    if (sliverPlans[key]) return sliverPlans[key];
+    const R = planRng("sliver" + key);
+    return (sliverPlans[key] = Array.from({ length: rows }, () => holes(R, units * TILE_SUB, TILE_SUB)));
+  }
+  // push one part as its kept smaller squares
+  function pushSub(rects, x, y, w, h, keep, cols, rows, base) {
+    const cw = w / cols, ch = h / rows;
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      if (!keep[j * cols + i]) continue;
+      // round the edges to whole pixels so neighbouring squares meet without seams
+      const x0 = Math.round(x + i * cw), x1 = Math.round(x + (i + 1) * cw);
+      const y0 = Math.round(y + j * ch), y1 = Math.round(y + (j + 1) * ch);
+      rects.push(Object.assign({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, base));
+    }
+  }
 
   function layout() {
     if (!rd.ok || !S.started) return [];
@@ -216,7 +297,7 @@
     const sh = (home.h - gapPx * (n - 1)) / n;
     const twist = S.twistIntro * 14 + S.ptr * 26;
     const px = S.ptr * 34, py = S.ptrY * 20;     // the steel layer follows the mouse
-    const rects = [];
+    const rects = [], sliverRects = [];
     const oxHome = d => -home.x + px + twist * d + S.turn * (1 + d * .12) + S.scroll * (.16 + d * .03);
     const oxSliver = d => -home.x + twist * d * 1.6 + S.turn * (1 - d * .12) - S.scroll * .1;
 
@@ -237,9 +318,10 @@
       }
     } else {
       const sv = relRect(sliver);
+      const su = Math.max(1, Math.round(sv.w / sh)), plan = sliverPlan(n, su);
       for (let i = 0; i < n; i++) {
         const d = i - mid, y = home.y + i * (sh + gapPx);
-        rects.push({ x: sv.x, y, w: sv.w, h: sh, ox: oxSliver(d), oy: -home.y });
+        pushSub(sliverRects, sv.x, y, sv.w, sh, plan[i], su * TILE_SUB, TILE_SUB, { ox: oxSliver(d), oy: -home.y });
         const p = easeInOut(S.strips[i].p);
         // the plate slides out to the left, carrying its pattern with it
         const shift = p * (home.x + home.w + sh + 60);
@@ -254,13 +336,12 @@
       for (const q of b.parts) {
         const a = rows[q.r], z = rows[q.r + q.rh - 1];
         if (!a.on) continue;
-        rects.push({
-          x: home.x + q.c * (uw + gapPx) - row.shift, y: a.y, w: q.cw * (uw + gapPx) - gapPx, h: z.y + z.h - a.y,
-          ox: row.ox + px * row.m * (b.k - 1), oy: row.oy + py * row.m * (b.k - 1), style: b.style, zoom: b.zoom
-        });
+        pushSub(rects, home.x + q.c * (uw + gapPx) - row.shift, a.y, q.cw * (uw + gapPx) - gapPx, z.y + z.h - a.y,
+          q.keep, q.cw * TILE_SUB, q.rh * TILE_SUB,
+          { ox: row.ox + px * row.m * (b.k - 1) + (b.dx || 0) * home.w, oy: row.oy + py * row.m * (b.k - 1) + (b.dy || 0) * home.h, style: b.style, zoom: b.zoom });
       }
     }
-    return rects;
+    return rects.concat(sliverRects);            // the strip last, so it draws in a batch of its own
   }
 
   // the intro text makes room for the two blocks that step out of the column
@@ -272,13 +353,14 @@
     }
     const set = (el, wd, ht) => { el.style.width = Math.max(0, wd) + "px"; el.style.height = Math.max(0, ht) + "px"; };
     const s = stage.getBoundingClientRect(), t = introEl.getBoundingClientRect();
-    if (mqMobile.matches || s.height < 1) { w.forEach(el => set(el, 0, 0)); return; }
+    if (mqMobile.matches || s.height < 1) { w.forEach(el => set(el, 0, 0)); introEl.style.setProperty("--lead-in", "0px"); return; }
     const n = S.strips.length, g = clamp(s.height * .0056, 2.5, 6) * TILE_GAP, sh = (s.height - g * (n - 1)) / n;
     const units = gridUnits(s.width, sh, g), uw = (s.width - g * (units - 1)) / units;
     const top = t.top + parseFloat(getComputedStyle(introEl).paddingTop) - introEl.scrollTop;
     const wd = s.right + g + uw - t.left + 16, pad = 10;
     const hA = Math.max(0, s.top + sh + pad - top);
     const yB = s.top + (n - 2) * (sh + g) - pad;
+    introEl.style.setProperty("--lead-in", Math.max(0, wd) + "px");   // the lead paragraph starts right of the top block
     set(w[0], wd, hA);
     set(w[1], 0, yB - top - hA);
     set(w[2], wd, sh + 2 * pad);
@@ -291,12 +373,12 @@
     if (!bgEl) return;
     if (mqMobile.matches) { bgEl.style.cssText = ""; return; }
     const r = relRect(stage), sv = relRect(sliver), t = relRect(introEl);
-    bgEl.style.left = "0px";
+    bgEl.style.left = r.x + "px";
     bgEl.style.top = r.y + "px";
-    bgEl.style.width = Math.max(0, sv.x - 4) + "px";
+    bgEl.style.width = Math.max(0, sv.x - 4 - r.x) + "px";
     bgEl.style.height = r.h + "px";
-    bgEl.style.setProperty("--ramp-a", (r.x + r.w) + "px");
-    bgEl.style.setProperty("--ramp-b", Math.max(r.x + r.w + 1, t.x + 8) + "px");
+    bgEl.style.setProperty("--ramp-a", r.w + "px");
+    bgEl.style.setProperty("--ramp-b", Math.max(r.w + 1, t.x - r.x + 8) + "px");
   }
 
   /* --------------------------------------------------------------------
@@ -988,6 +1070,30 @@
     placeBg();
     intro().then(() => { if (startHash) route(); });
   };
-  (document.fonts && document.fonts.ready ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1200))]) : Promise.resolve())
-    .then(begin);
+  const fontsReady = document.fonts && document.fonts.ready
+    ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1200))]) : Promise.resolve();
+
+  // The opening text comes before everything: no pattern, no title, until Enter.
+  // It is skipped on deep links (#explore …) and once seen in this browser tab.
+  const pre = SITE.preface;
+  let seen = false;
+  try { seen = sessionStorage.getItem("tp-preface") === "1"; } catch (e) {}
+  if (pre && (pre.lead || (pre.paragraphs || []).length) && !startHash && !seen) {
+    const el = document.createElement("div");
+    el.className = "preface"; el.id = "preface";
+    el.setAttribute("role", "dialog"); el.setAttribute("aria-label", "Introduction");
+    const paras = (pre.paragraphs || []).filter(Boolean);
+    el.innerHTML = (pre.lead ? `<p class="preface__lead">${pre.lead}</p>` : "") +
+      `<div class="preface__body">${paras.map((p, i) => `<p style="--p:${i + 1}">${p}</p>`).join("")}` +
+      `<button class="preface__go" type="button" style="--p:${paras.length + 1}">${pre.button || "Enter"} <span class="arrow">→</span></button></div>`;
+    document.body.appendChild(el);
+    const go = el.querySelector(".preface__go");
+    fontsReady.then(() => requestAnimationFrame(() => { el.classList.add("is-in"); go.focus({ preventScroll: true }); }));
+    go.addEventListener("click", () => {
+      try { sessionStorage.setItem("tp-preface", "1"); } catch (e) {}
+      el.classList.add("is-out");
+      setTimeout(() => el.remove(), 1200);
+      setTimeout(begin, reduced ? 0 : 450);      // the pattern starts as the text clears
+    }, { once: true });
+  } else fontsReady.then(begin);
 })();

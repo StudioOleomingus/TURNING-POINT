@@ -133,16 +133,28 @@ you like, and commit.
 ## Changing the look of the pattern
 
 * **Steel texture:** replace `assets/img/texture.jpg` (square, ~900–1200 px).
-* **Blocks:** the rows are cut into blocks on a grid of squares: squares,
-  rectangles and L shapes. Every block draws the same growing pattern in one
-  of three ways (steel texture, ink outlines, or a clay relief with ambient
-  occlusion), at its own zoom (above 1 = smaller and denser), and travels its
-  own distance with the mouse. On wide screens two more blocks step out of
-  the column to the right (an outline block beside the top row, a steel block
-  beside the second-last row) and the intro text wraps round them. The mix is
-  set by `TILE_STYLES` and `TILE_ZOOMS` in `js/main.js` (repeat an entry to
-  make it more likely), the gaps by `TILE_GAP`, the shapes and the two extra
-  blocks in `gridPlan`. The layout is fixed for a given screen shape.
+* **Active area:** on wide screens everything sits inside a margin: `--ax`
+  (left), `--ax2` (right) and `--mt` (top and bottom) at the top of
+  `css/style.css`; `--sl` is the width of the right-hand pattern strip.
+* **Opening text:** `preface` in `js/content.js` (first line, paragraphs,
+  button label; also in the editor under "Title, intro & links"). It shows
+  before the pattern and the title until the button is pressed. It is skipped
+  on links straight to a section (`#explore`) and once it has been seen in
+  that browser tab. Empty it to go straight to the site.
+* **Blocks:** the rows are cut into blocks on a grid of squares (squares,
+  rectangles and L shapes) with no gaps between them. Every square is split
+  into smaller squares (`TILE_SUB`, 2 = 2×2) and 30% of them are left empty
+  (`TILE_EMPTY`): bitten out of the edges of the pattern area, with two or
+  three (`TILE_INNER`) singly in the middle, so the area has a different
+  ragged outline on each visit (`shapeMask`). Blocks show the steel texture at
+  different zooms (`TILE_ZOOMS`; above 1 = smaller and denser), except two
+  drawn as ink outlines, and each travels its own distance with the mouse. On
+  wide screens two more blocks step out of the column to the right (an outline
+  block beside the top row, a steel block beside the second-last row); the
+  first intro paragraph, set larger, starts to the right of the top one. The
+  right-hand strip is cut into squares too, emptied at random. All of this is
+  in `gridPlan` and `layout` in `js/main.js`. (The engine still has a
+  clay-relief style, `style: 2`, unused for now.)
 * **Density:** `DENSITY` at the top of `js/main.js` (1 = the first version,
   2 = twice as fine). Try values without editing by adding `?density=1.5` to
   the address. Phones are capped at `DENSITY_PHONE_MAX` (1.5): finer cuts
