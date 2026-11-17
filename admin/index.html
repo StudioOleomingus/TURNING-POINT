@@ -390,7 +390,7 @@
     data.preface = data.preface || { lead: "", paragraphs: [], button: "Enter" };
     data.preface.paragraphs = data.preface.paragraphs || [];
     main.append(h("div", { class: "grid" },
-      fieldEl(data.preface, "lead", "text", "First line (large)"),
+      fieldEl(data.preface, "lead", "text", "First line"),
       fieldEl(data.preface, "button", "text", "Button label")));
     main.append(h("div", { class: "list" }, data.preface.paragraphs.map((p, i) => h("div", { class: "row" },
       h("textarea", { rows: 4, value: p, oninput: e => { data.preface.paragraphs[i] = e.target.value; setDirty(); } }), ctl(data.preface.paragraphs, i)))));

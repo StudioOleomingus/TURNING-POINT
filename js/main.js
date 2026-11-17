@@ -276,13 +276,15 @@
     return (sliverPlans[key] = Array.from({ length: rows }, () => holes(R, units * TILE_SUB, TILE_SUB)));
   }
   // push one part as its kept smaller squares
-  function pushSub(rects, x, y, w, h, keep, cols, rows, base) {
+  // clip: [left, right] edges beyond which nothing is drawn (the active area)
+  function pushSub(rects, x, y, w, h, keep, cols, rows, base, clip) {
     const cw = w / cols, ch = h / rows;
     for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
       if (!keep[j * cols + i]) continue;
       // round the edges to whole pixels so neighbouring squares meet without seams
-      const x0 = Math.round(x + i * cw), x1 = Math.round(x + (i + 1) * cw);
+      let x0 = Math.round(x + i * cw), x1 = Math.round(x + (i + 1) * cw);
       const y0 = Math.round(y + j * ch), y1 = Math.round(y + (j + 1) * ch);
+      if (clip) { x0 = Math.max(x0, clip[0]); x1 = Math.min(x1, clip[1]); if (x1 <= x0) continue; }
       rects.push(Object.assign({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, base));
     }
   }
@@ -303,7 +305,7 @@
 
     // each row: where it is, how far it has slid away, and its pattern offset
     const rows = [];
-    let g = gapPx;
+    let g = gapPx, clip = null;
     if (mobile) {
       // the first layer grows to fill the band while the others fold away
       const q = S.single, w = i => (i === 0 ? 1 : 1 - q);
@@ -319,12 +321,13 @@
     } else {
       const sv = relRect(sliver);
       const su = Math.max(1, Math.round(sv.w / sh)), plan = sliverPlan(n, su);
+      clip = [Math.round(home.x), Math.round(sv.x + sv.w)];   // rows sliding away are cut at the active area's edges
       for (let i = 0; i < n; i++) {
         const d = i - mid, y = home.y + i * (sh + gapPx);
         pushSub(sliverRects, sv.x, y, sv.w, sh, plan[i], su * TILE_SUB, TILE_SUB, { ox: oxSliver(d), oy: -home.y });
         const p = easeInOut(S.strips[i].p);
         // the plate slides out to the left, carrying its pattern with it
-        const shift = p * (home.x + home.w + sh + 60);
+        const shift = p * (home.w + sh + 60);
         rows.push({ y, h: sh, shift, ox: oxHome(d) + shift, oy: -home.y + py * (1 - p), m: 1 - p, on: p <= .999 });
       }
     }
@@ -338,7 +341,7 @@
         if (!a.on) continue;
         pushSub(rects, home.x + q.c * (uw + gapPx) - row.shift, a.y, q.cw * (uw + gapPx) - gapPx, z.y + z.h - a.y,
           q.keep, q.cw * TILE_SUB, q.rh * TILE_SUB,
-          { ox: row.ox + px * row.m * (b.k - 1) + (b.dx || 0) * home.w, oy: row.oy + py * row.m * (b.k - 1) + (b.dy || 0) * home.h, style: b.style, zoom: b.zoom });
+          { ox: row.ox + px * row.m * (b.k - 1) + (b.dx || 0) * home.w, oy: row.oy + py * row.m * (b.k - 1) + (b.dy || 0) * home.h, style: b.style, zoom: b.zoom }, clip);
       }
     }
     return rects.concat(sliverRects);            // the strip last, so it draws in a batch of its own
@@ -1083,17 +1086,32 @@
     el.className = "preface"; el.id = "preface";
     el.setAttribute("role", "dialog"); el.setAttribute("aria-label", "Introduction");
     const paras = (pre.paragraphs || []).filter(Boolean);
-    el.innerHTML = (pre.lead ? `<p class="preface__lead">${pre.lead}</p>` : "") +
-      `<div class="preface__body">${paras.map((p, i) => `<p style="--p:${i + 1}">${p}</p>`).join("")}` +
-      `<button class="preface__go" type="button" style="--p:${paras.length + 1}">${pre.button || "Enter"} <span class="arrow">→</span></button></div>`;
+    el.innerHTML = `<div class="preface__body">` + (pre.lead ? `<p class="preface__lead">${pre.lead}</p>` : "") +
+      paras.map((p, i) => `<p style="--p:${i + 1}">${p}</p>`).join("") +
+      `<button class="preface__go" type="button" style="--p:${paras.length + 1}">${pre.button || "Enter"} <span class="arrow">→</span></button></div>` +
+      // the exit: the text is eaten away along a reaction-diffusion pattern (assets/img/dissolve.png:
+      // an alpha map; the text survives where it is above a threshold that climbs from 0 to 1)
+      `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="dissolve" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">` +
+      `<feImage href="assets/img/dissolve.png" x="0" y="0" width="460" height="460" preserveAspectRatio="none" result="t"/><feTile in="t" result="tt"/>` +
+      `<feComponentTransfer in="tt" result="m"><feFuncA type="linear" slope="30" intercept="1"/></feComponentTransfer>` +
+      `<feComposite in="SourceGraphic" in2="m" operator="in"/></filter></svg>`;
     document.body.appendChild(el);
     const go = el.querySelector(".preface__go");
     fontsReady.then(() => requestAnimationFrame(() => { el.classList.add("is-in"); go.focus({ preventScroll: true }); }));
     go.addEventListener("click", () => {
       try { sessionStorage.setItem("tp-preface", "1"); } catch (e) {}
-      el.classList.add("is-out");
-      setTimeout(() => el.remove(), 1200);
-      setTimeout(begin, reduced ? 0 : 450);      // the pattern starts as the text clears
+      // the pattern starts growing underneath at once, and the text dissolves into it
+      el.classList.add("is-leaving");
+      begin();
+      const body = el.querySelector(".preface__body"), fn = el.querySelector("feFuncA");
+      if (reduced || !fn) { el.remove(); return; }
+      body.style.filter = "url(#dissolve)";
+      const t0 = performance.now(), DUR = 2600;
+      (function step(now) {
+        const k = Math.min(1, (now - t0) / DUR), th = k * k * (3 - 2 * k) * 1.04 - .02;
+        fn.setAttribute("intercept", (.5 - 30 * th).toFixed(3));
+        if (k < 1) requestAnimationFrame(step); else el.remove();
+      })(t0);
     }, { once: true });
   } else fontsReady.then(begin);
 })();
