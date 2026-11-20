@@ -25,7 +25,8 @@
   const frame = $("#frame"), canvas = $("#pattern"), stage = $("#stage"),
         sliver = $("#sliver"), side = $("#side"), sideHot = $("#sideHot"),
         titleEl = $("#title"), introEl = $("#intro"),
-        navEl = $("#nav"), navList = $("#navList"), panel = $("#panel"), metaEl = $("#meta");
+        navEl = $("#nav"), navList = $("#navList"), panel = $("#panel"), metaEl = $("#meta"),
+        orgEl = $("#org"), markEl = $("#mark");
 
   const mqMobile = matchMedia("(max-width: 820px)");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -73,11 +74,14 @@
   /* =====================================================================
      2. Pattern engine
      ===================================================================== */
-  const rd = new TurningPattern(canvas, { texture: "assets/img/texture.jpg", texturePx: 760 });
-  if (!rd.ok) root.classList.add("no-webgl");
   // theme: <html data-theme="mono"> (black and white on paper) or "color".
   // Try the other one without editing: …/index.html?theme=color
   const MONO = root.dataset.theme !== "color";
+  // the colour version uses the blue recolouring of the steel (assets/img/texture-blue.jpg)
+  const TEXTURE = MONO ? "assets/img/texture.jpg" : "assets/img/texture-blue.jpg";
+  const RIM = MONO ? .28 : 0;          // dark edge just outside each cut (0 = clean white cuts, as in the mockup)
+  const rd = new TurningPattern(canvas, { texture: TEXTURE, texturePx: 760 });
+  if (!rd.ok) root.classList.add("no-webgl");
 
   // The layer behind is a pre-rendered, seamless tile (assets/img/pattern-tile.png)
   // shown by CSS (#bgpat) — it costs nothing at runtime. JS only places it.
@@ -100,7 +104,7 @@
     busyUntil: 0,
     dirty: true
   };
-  const N_DESKTOP = 6, N_MOBILE = 5;
+  const N_DESKTOP = 7, N_MOBILE = 5;   // desktop: the 7 module rows of the home grid (css: rows 1–7)
   const makeStrips = (n, p = 0) => Array.from({ length: n }, () => ({ p, from: p, to: p, t0: 0, dur: 1, delay: 0 }));
   S.strips = makeStrips(N_DESKTOP);
 
@@ -137,15 +141,17 @@
     if (s < ARM_STEPS) {
       const t = s / ARM_STEPS;
       const R = t * Math.hypot(W, H) * .62;
-      const a0 = t * Math.PI * 2.6;
+      const a0 = t * Math.PI * 2.6 + (S.seedRot || 0);
+      const cx = W * (S.seedCx ?? .5), cy = H * (S.seedCy ?? .5);   // a click on the pattern moves the centre
       for (let k = 0; k < 3; k++) {
         const a = a0 + k * Math.PI * 2 / 3;
-        rd.seed(W / 2 + Math.cos(a) * R, H / 2 + Math.sin(a) * R, 2.6 + t * 1.4, 1);
+        rd.seed(((cx + Math.cos(a) * R) % W + W) % W, ((cy + Math.sin(a) * R) % H + H) % H, 2.6 + t * 1.4, 1);
       }
     } else if (s < 2400) {
       for (let k = 0; k < 3; k++) {
         const i = ++S.seedPhase, ang = i * 2.39996, r = Math.sqrt(i / 120) * .5 * Math.hypot(W, H);
-        rd.seed(((W / 2 + Math.cos(ang) * r) % W + W) % W, ((H / 2 + Math.sin(ang) * r) % H + H) % H, 2.5, 1);
+        const cx = W * (S.seedCx ?? .5), cy = H * (S.seedCy ?? .5);
+        rd.seed(((cx + Math.cos(ang) * r) % W + W) % W, ((cy + Math.sin(ang) * r) % H + H) % H, 2.5, 1);
       }
     }
   }
@@ -160,7 +166,7 @@
     return { x: r.left - c.left, y: r.top - c.top, w: r.width, h: r.height };
   }
 
-  /* The rows are cut into blocks on a grid of squares: squares, rectangles
+  /* The rows are cut into blocks on a grid of squares: squares, 2 × 2 squares, rectangles
      (two squares across or down) and L shapes (three squares, over two rows),
      with no gaps between them. Every square is subdivided into TILE_SUB ×
      TILE_SUB smaller squares, and TILE_EMPTY of those are left out: bitten out
@@ -174,8 +180,9 @@
   const TILE_ZOOMS = [1, 1, 1, 1.5, 2, 2.4];
   const TILE_GAP = 0;                                     // gaps between blocks, × the original row gap
   const TILE_SUB = 2;                                     // each square → TILE_SUB × TILE_SUB smaller squares
-  const TILE_EMPTY = .3;                                  // share of the smaller squares left empty
-  const TILE_INNER = [2, 3];                              // how many of those sit in the middle (min, max); the rest bite into the edges
+  const TILE_EMPTY = .48;                                 // share of the smaller squares left empty (the mockup: about half)
+  const TILE_INNER = [3, 6];
+  const SLIVER_EMPTY = .25;                               // share of the right-hand strip's small squares left empty                              // how many of those sit in the middle (min, max); the rest bite into the edges
   const PLAN_SEED = (Math.random() * 4294967296) >>> 0;   // a new arrangement on each visit
   const planRng = key => {
     let s = PLAN_SEED;
@@ -183,10 +190,10 @@
     return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
   };
   // which of a block part's smaller squares are kept: exactly TILE_EMPTY of them go
-  function holes(R, cols, rows) {
+  function holes(R, cols, rows, share = TILE_EMPTY) {
     const n = cols * rows, keep = new Array(n).fill(true), idx = [...Array(n).keys()];
     for (let i = n - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
-    for (let i = 0; i < Math.round(n * TILE_EMPTY); i++) keep[idx[i]] = false;
+    for (let i = 0; i < Math.round(n * share); i++) keep[idx[i]] = false;
     return keep;
   }
   /* The pattern area's outline: the empty squares are bitten out of its edges,
@@ -212,15 +219,19 @@
       for (const c of cand) { x -= c[2]; if (x <= 0) { pick = c; break; } }
       keep[pick[1]][pick[0]] = false;
     }
-    // a few single holes in the middle, apart from each other and from the bites
+    // a few holes in the middle, apart from each other and from the bites: a small square,
+    // or now and then a whole module (TILE_SUB × TILE_SUB of them)
     const deep = Math.max(2, Math.floor(Math.min(cols, rows) / 4));
     for (let k = 0, tries = 0; k < inner && tries < 400; tries++) {
-      const i = Math.floor(R() * cols), j = Math.floor(R() * rows);
-      if (depth(i, j) < deep || !keep[j][i]) continue;
+      const big = R() < .4, s = big ? TILE_SUB : 1;
+      let i = Math.floor(R() * cols), j = Math.floor(R() * rows);
+      if (big) { i -= i % TILE_SUB; j -= j % TILE_SUB; }
+      if (depth(i, j) < deep || depth(i + s - 1, j + s - 1) < deep - 1) continue;
       let clear = true;
-      for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) if (gone(i + a, j + b)) clear = false;
+      for (let b = -1; b <= s; b++) for (let a = -1; a <= s; a++) if (gone(i + a, j + b)) clear = false;
       if (!clear) continue;
-      keep[j][i] = false; k++;
+      for (let b = 0; b < s; b++) for (let a = 0; a < s; a++) keep[j + b][i + a] = false;
+      k++;
     }
     return keep;
   }
@@ -238,7 +249,8 @@
       if (!free(r, c)) continue;
       const right = free(r, c + 1), down = free(r + 1, c), x = R();
       let parts = null;
-      if (x < .22) {                                      // L shapes, whichever way fits
+      if (x < .14 && right && down && free(r + 1, c + 1)) parts = [{ c, r, cw: 2, rh: 2 }];   // 2 × 2
+      if (!parts && x < .3) {                             // L shapes, whichever way fits
         const fits = [];
         if (right && down) fits.push([H(c, r), V(c, r)]);
         if (right && free(r + 1, c + 1)) fits.push([H(c, r), V(c + 1, r)]);
@@ -246,8 +258,8 @@
         if (down && free(r + 1, c - 1)) fits.push([V(c, r), H(c - 1, r + 1)]);
         if (fits.length) parts = fits[Math.floor(R() * fits.length)];
       }
-      if (!parts && x < .46 && right) parts = [H(c, r)];
-      if (!parts && x < .58 && down) parts = [V(c, r)];
+      if (!parts && x < .52 && right) parts = [H(c, r)];
+      if (!parts && x < .62 && down) parts = [V(c, r)];
       if (!parts) parts = [Q(c, r)];
       for (const q of parts) for (let i = 0; i < q.cw; i++) for (let j = 0; j < q.rh; j++) used[q.r + j][q.c + i] = true;
       const zoom = TILE_ZOOMS[Math.floor(R() * TILE_ZOOMS.length)];
@@ -259,8 +271,8 @@
       const cols = q.cw * TILE_SUB, rws = q.rh * TILE_SUB;
       q.keep = Array.from({ length: cols * rws }, (_, t) => mask[q.r * TILE_SUB + Math.floor(t / cols)][q.c * TILE_SUB + t % cols]);
     }
-    // two outline blocks in all: one in the column plus the one beside it on wide screens
-    const outlines = extras ? 1 : 2, pick = [...blocks.keys()];
+    // a few blocks drawn as ink outlines (about one in five, as in the mockup)
+    const outlines = clamp(Math.round(blocks.length * .2), 2, 5), pick = [...blocks.keys()];
     for (let i = 0; i < outlines && pick.length; i++) {
       const b = blocks[pick.splice(Math.floor(R() * pick.length), 1)[0]];
       b.style = 1; b.zoom = Math.min(b.zoom, 1.5);       // fine outlines turn to noise when very small
@@ -273,6 +285,7 @@
     }
     return (gridPlans[key] = blocks);
   }
+  const STEP_OUT = false;
   const gridUnits = (w, h, gap) => clamp(Math.round((w + gap) / (h + gap)), 2, 8);
   // the right-hand strip: each row is a run of squares, subdivided and thinned the same way
   const sliverPlans = {};
@@ -280,7 +293,7 @@
     const key = rows + ":" + units;
     if (sliverPlans[key]) return sliverPlans[key];
     const R = planRng("sliver" + key);
-    return (sliverPlans[key] = Array.from({ length: rows }, () => holes(R, units * TILE_SUB, TILE_SUB)));
+    return (sliverPlans[key] = Array.from({ length: rows }, () => holes(R, units * TILE_SUB, TILE_SUB, SLIVER_EMPTY)));
   }
   // push one part as its kept smaller squares
   // clip: [left, right] edges beyond which nothing is drawn (the active area)
@@ -331,16 +344,21 @@
       clip = [Math.round(home.x), Math.round(sv.x + sv.w)];   // rows sliding away are cut at the active area's edges
       for (let i = 0; i < n; i++) {
         const d = i - mid, y = home.y + i * (sh + gapPx);
-        pushSub(sliverRects, sv.x, y, sv.w, sh, plan[i], su * TILE_SUB, TILE_SUB, { ox: oxSliver(d), oy: -home.y });
+        // the strip starts a row lower (row 3 of the grid); its outline square sits at the top, by the links
+        if (i > 0) pushSub(sliverRects, sv.x, y, sv.w, sh, plan[i], su * TILE_SUB, TILE_SUB, { ox: oxSliver(d), oy: -home.y });
         const p = easeInOut(S.strips[i].p);
         // the plate slides out to the left, carrying its pattern with it
         const shift = p * (home.w + sh + 60);
         rows.push({ y, h: sh, shift, ox: oxHome(d) + shift, oy: -home.y + py * (1 - p), m: 1 - p, on: p <= .999 });
       }
     }
+    if (!mobile && markEl) {
+      const mk = relRect(markEl);
+      if (mk.w > 1) sliverRects.push({ x: Math.round(mk.x), y: Math.round(mk.y), w: Math.round(mk.w), h: Math.round(mk.h), ox: oxSliver(-mid), oy: -home.y, style: 1 });
+    }
     const units = gridUnits(home.w, sh, gapPx);
     const uw = (home.w - gapPx * (units - 1)) / units;
-    for (const b of gridPlan(n, units, !mobile)) {
+    for (const b of gridPlan(n, units, false)) {   // (true: two blocks step out of the column, the old layout)
       const row = rows[b.row];                   // a block moves with the row it starts in
       if (!row.on) continue;
       for (const q of b.parts) {
@@ -351,11 +369,14 @@
           { ox: row.ox + px * row.m * (b.k - 1) + (b.dx || 0) * home.w, oy: row.oy + py * row.m * (b.k - 1) + (b.dy || 0) * home.h, style: b.style, zoom: b.zoom }, clip);
       }
     }
-    return rects.concat(sliverRects);            // the strip last, so it draws in a batch of its own
+    S.lastRects = rects.concat(sliverRects);
+    return S.lastRects;                          // the strip last, so it draws in a batch of its own
   }
 
   // the intro text makes room for the two blocks that step out of the column
+  // (the old layout; with the module grid nothing steps out, so it clears them)
   function placeWraps() {
+    if (!STEP_OUT) { introEl.querySelectorAll("i.wrap").forEach(el => el.remove()); introEl.style.removeProperty("--lead-in"); return; }
     let w = introEl.querySelectorAll("i.wrap");
     if (!w.length) {
       introEl.insertAdjacentHTML("afterbegin", '<i class="wrap"></i><i class="wrap"></i><i class="wrap"></i>');
@@ -389,6 +410,37 @@
     bgEl.style.height = r.h + "px";
     bgEl.style.setProperty("--ramp-a", r.w + "px");
     bgEl.style.setProperty("--ramp-b", Math.max(r.w + 1, t.x - r.x + 8) + "px");
+  }
+
+  /* A click in the pattern area ripples a new pattern out from that point:
+     inside RIPPLE_R the pattern changes character (lines ⇄ dots, direction,
+     how strongly it aligns), and a ring sweeps outwards clearing the old one
+     so the new one grows in behind it. The squares stay as they are. */
+  const RIPPLE_R = .45;          // radius, as a share of the pattern's height (in simulation cells)
+  const RIPPLE_STEPS = 2000;     // how long the ring takes to reach the edge (simulation steps)
+  function patternPoint(e) {
+    if (current || !S.started || !S.lastRects || !S.lastRects.length) return null;
+    const c = canvas.getBoundingClientRect(), x = e.clientX - c.left, y = e.clientY - c.top;
+    const inArea = [stage, sliver, markEl].some(el => { if (!el) return false; const r = relRect(el); return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; });
+    if (!inArea) return null;
+    // the square under the click (or the nearest one, for an empty square) maps it into the pattern
+    let best = null, bd = Infinity;
+    for (const r of S.lastRects) {
+      const dx = Math.max(r.x - x, 0, x - r.x - r.w), dy = Math.max(r.y - y, 0, y - r.y - r.h), d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = r; }
+    }
+    const z = best.zoom || 1, W = rd.W, H = rd.H;
+    return { x: (((x + (best.ox || 0)) * z / rd.cell) % W + W) % W, y: (((y + (best.oy || 0)) * z / rd.cell) % H + H) % H };
+  }
+  function rippleAt(pt) {
+    const lines = Math.random() < .5;   // swing the new pattern towards lines or towards dots
+    rd.ripple(pt.x, pt.y, RIPPLE_R * Math.min(rd.W, rd.H), {
+      dotBias: lines ? -.25 - Math.random() * .35 : .2 + Math.random() * .4,
+      anisotropy: .2 + Math.random() * .65,
+      steps: RIPPLE_STEPS
+    });
+    S.simTarget = Math.max(S.simTarget, rd.steps + RIPPLE_STEPS + 1600);
+    kick();
   }
 
   /* --------------------------------------------------------------------
@@ -439,7 +491,7 @@
       if (rd.ok && S.started) {
         if (mqMobile.matches) rd.resize();
         const fill = S.fast ? smooth(1200, 3600, rd.steps) : Math.max(smooth(4000, 6200, rd.steps), S.fill);
-        rd.render(layout(), { fill, mono: MONO });
+        rd.render(layout(), { fill, mono: MONO, rim: RIM });
       }
       S.dirty = false;
     }
@@ -507,6 +559,7 @@
     await wait(T(320));
     navEl.classList.add("is-in");
     metaEl.classList.add("is-in");
+    orgEl && orgEl.classList.add("is-in");
     await wait(T(500));
 
     root.classList.remove("is-intro");
@@ -950,6 +1003,7 @@
       return;
     }
     if (e.target.closest("#homeLink")) { e.preventDefault(); go(""); return; }
+    if (!e.target.closest("a, button")) { const pt = patternPoint(e); if (pt) { rippleAt(pt); return; } }
     if (root.classList.contains("side-open") && !e.target.closest("#side, #sideHot")) hideSide(true);
   });
   document.addEventListener("keydown", e => {
@@ -1071,6 +1125,114 @@
       start(e.clientX, e.clientY);
     }, { passive: true });
     window.addEventListener("scroll", () => { if (down === null) stop(); }, { passive: true });
+  })();
+
+  /* =====================================================================
+     7. Menu hover (desktop): a reaction-diffusion pattern spreads through
+     the word from the cursor — the letters fill with the blue steel, cut by
+     white channels. A small second simulation on its own canvas over the
+     menu, blended "lighten" so it shows only inside the black letters.
+     ===================================================================== */
+  (function hoverPattern() {
+    const CELL_EM = 1 / 70;          // simulation cell as a share of the menu's font size (smaller = finer)
+    const SPREAD = 800 * PSPEED;     // px per second the pattern spreads out from the cursor
+    const SEED_R = 3;                // size of each seed (simulation cells)
+    const SEED_GAP = .3;             // spacing of the seeds sown over a word, as a share of its height
+    if (reduced || MONO || !navEl || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+    const cv = document.createElement("canvas");
+    cv.className = "hoverpat";
+    cv.setAttribute("aria-hidden", "true");
+    navEl.appendChild(cv);
+    let eng = null, key = "", cell = 1, raf3 = 0, last3 = 0, budget = 0;
+    const st = new Map();            // item → { a: opacity, on, t0, x, y (entry point), px, py (cursor) }
+
+    function engine() {
+      if (mqMobile.matches || current) return null;
+      const fs = parseFloat(getComputedStyle(navEl).fontSize) || 40;
+      cell = fs * CELL_EM;
+      const W = Math.round(cv.clientWidth / cell), H = Math.round(cv.clientHeight / cell);
+      if (W < 8 || H < 8) return null;
+      const k = W + "x" + H;
+      if (!eng) {
+        eng = new TurningPattern(cv, { texture: TEXTURE, texturePx: fs * 7, seed: 23, dotBias: -.1, anisotropy: .55, threshold: .3 });
+        if (!eng.ok) return null;
+        eng.onTexture = () => kick3();
+      }
+      if (!eng.ok) return null;
+      if (k !== key) { if (!eng.start(W, H, cell)) { eng.ok = false; return null; } key = k; }
+      eng.resize();
+      return eng;
+    }
+    const box = el => {
+      const c = cv.getBoundingClientRect(), r = el.getBoundingClientRect(), pad = r.height * .08;
+      return { x: r.left - c.left - pad, y: r.top - c.top, w: r.width + 2 * pad, h: r.height };
+    };
+    // wipe a word's box clean (−2: forget it was grown, so it is plain black again)
+    function erase(b) {
+      const rad = b.h * .8 / cell, step = rad * 1.15;
+      for (let x = b.x / cell; x < (b.x + b.w) / cell + step; x += step) eng.seed(x, (b.y + b.h / 2) / cell, rad, -2);
+    }
+    function enter(el, e) {
+      const E = engine();
+      if (!E) return;
+      const b = box(el), c = cv.getBoundingClientRect();
+      const fading = [...st.entries()].some(([k, o]) => k !== el && o.a > .01);
+      if (fading) erase(b); else E.clear();
+      const x = e.clientX - c.left, y = e.clientY - c.top;
+      // seeds sown over the whole word (a jittered grid), queued a few each frame
+      const sow = [], gap = SEED_GAP * b.h;
+      for (let sy = b.y + gap / 2; sy < b.y + b.h; sy += gap)
+        for (let sx = b.x + gap / 2; sx < b.x + b.w; sx += gap)
+          sow.push([(sx + (Math.random() - .5) * gap) / cell, (sy + (Math.random() - .5) * gap) / cell]);
+      sow.sort((p, q) => Math.hypot(p[0] * cell - x, p[1] * cell - y) - Math.hypot(q[0] * cell - x, q[1] * cell - y));
+      st.set(el, { a: (st.get(el) || {}).a || 0, on: true, t0: performance.now(), x, y, px: x, py: y, sow });
+      budget = 3000;                 // simulation steps to run after each hover (then it holds still)
+      kick3();
+    }
+    function leave(el) { const o = st.get(el); if (o) { o.on = false; kick3(); } }
+    function kick3() { if (!raf3) { last3 = performance.now(); raf3 = requestAnimationFrame(loop); } }
+
+    function loop(now) {
+      raf3 = 0;
+      if (!eng || !eng.ok) return;
+      const dt = Math.min(.05, (now - last3) / 1000); last3 = now;
+      let alive = false;
+      const rects = [];
+      for (const [el, o] of st) {
+        const b = box(el);
+        o.a += ((o.on ? 1 : 0) - o.a) * (1 - Math.exp(-(o.on ? 16 : 9) * SPEED * dt));
+        if (o.on) {
+          for (let k = 0; k < 24 && o.sow.length; k++) eng.seed(...o.sow.shift(), SEED_R);
+          eng.seed(o.px / cell, o.py / cell, SEED_R);   // and under the cursor as it moves
+        }
+        if (!o.on && o.a < .01) { erase(b); st.delete(el); continue; }
+        alive = true;
+        // shown inside a circle that widens from where the cursor came in
+        const R = (now - o.t0) / 1000 * SPREAD;
+        rects.push({ x: b.x, y: b.y, w: b.w, h: b.h, a: o.a, vig: R < Math.hypot(b.w, b.h) * 1.3 ? [o.x, o.y, R + 1] : null });
+      }
+      if (budget > 0 || eng.seeds.length) {
+        const n = Math.max(1, Math.min(budget, clamp(Math.round(3200 * PSPEED * dt), 8, 60)));
+        eng.step(n); budget -= n;
+      }
+      // white where the pattern cuts, the blue steel where it has grown, nothing elsewhere
+      eng.render([], {});
+      for (const r of rects) {
+        const v = r.vig ? { vignette: r.vig } : {};
+        eng.render([r], Object.assign({ tint: [1, 1, 1], invert: true, clear: false }, v));
+        eng.render([r], Object.assign({ clear: false, rim: 0 }, v));
+      }
+      if (alive) raf3 = requestAnimationFrame(loop);
+    }
+
+    navList.querySelectorAll(".nav__item").forEach(el => {
+      el.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") enter(el, e); });
+      el.addEventListener("pointerleave", () => leave(el));
+      el.addEventListener("pointermove", e => {
+        const o = st.get(el); if (!o) return;
+        const c = cv.getBoundingClientRect(); o.px = e.clientX - c.left; o.py = e.clientY - c.top;
+      });
+    });
   })();
 
   /* =====================================================================

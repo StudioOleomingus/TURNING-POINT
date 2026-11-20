@@ -27,7 +27,9 @@
      flat colour; invert:true draws the cut shapes; vignette:[x,y,r];
      ramp:[x0,x1,a0,a1] fades opacity from a0 to a1 between x0 and x1;
      pale:0..1 lightens the texture towards white; mono:true renders it
-     in black and white.
+     in black and white; rim:0..1 darkens the edge just outside each cut.
+     rd.ripple(x, y, R) ripples a new pattern out from (x, y) to radius R.
+     rd.seed(x, y, r, -2) erases a disc completely (also where it had grown).
      Two instances may share one canvas (they share its WebGL context).
    ===================================================================== */
 (function () {
@@ -49,7 +51,11 @@
   uniform vec4 uSeeds[${MAX_SEEDS}];
   uniform int uSeedCount;
   uniform vec4 uRegime; // coral F,K  mitosis F,K
+  uniform vec4 uRip[4];  // ripples: centre xy (cells), front radius, band width
+  uniform int uRipN;
   out vec4 o;
+
+  float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
   vec4 S(ivec2 p){ return texelFetch(uState, (p + uSize) % uSize, 0); }
 
@@ -85,6 +91,7 @@
 
     vec2 fp = vec2(p) + 0.5;
     vec2 sz = vec2(uSize);
+    bool wipe = false;
     for (int i = 0; i < ${MAX_SEEDS}; i++) {
       if (i >= uSeedCount) break;
       vec4 s = uSeeds[i];
@@ -92,11 +99,24 @@
       dd = min(dd, sz - dd);
       if (dot(dd, dd) < s.z * s.z) {
         if (s.w >= 0.0) { A = 0.5; B = 0.5; }
-        else            { A = 1.0; B = 0.0; }
+        else            { A = 1.0; B = 0.0; wipe = wipe || s.w < -1.5; }   // −2 also forgets it was ever grown
+      }
+    }
+    // a ripple: a ring moving outwards clears the old pattern and leaves a
+    // sprinkling of seeds behind it, from which the new pattern grows
+    for (int i = 0; i < 4; i++) {
+      if (i >= uRipN) break;
+      vec4 q = uRip[i];
+      vec2 dd = abs(fp - q.xy);
+      dd = min(dd, sz - dd);
+      float d = length(dd);
+      if (d < q.z && d > q.z - q.w) {
+        if (hash(floor(fp / 3.0) + q.xy) < 0.13) { A = 0.5; B = 0.5; }
+        else { A = 1.0; B = 0.0; }
       }
     }
 
-    float vis = max(c.b, smoothstep(0.015, 0.09, B));
+    float vis = wipe ? 0.0 : max(c.b, smoothstep(0.015, 0.09, B));
     o = vec4(clamp(A, 0.0, 1.0), clamp(B, 0.0, 1.0), vis, 1.0);
   }`;
 
@@ -120,6 +140,7 @@
   uniform vec4  uRamp;     // horizontal fade: from x0 to x1 (css px), opacity a0 → a1
   uniform float uPale;     // 0..1 — mix the texture towards white
   uniform int   uMono;     // 1 = black and white
+  uniform float uRim;      // how dark the rim just outside each cut is (0 = none)
   uniform vec4  uRects[${MAX_RECTS}];  // x0,y0,x1,y1 (css px)
   uniform vec4  uOffs[${MAX_RECTS}];   // pattern offset xy (css px), texture offset zw (uv)
   uniform vec4  uStyle[${MAX_RECTS}];  // style (0 steel, 1 outline, 2 clay), zoom, opacity
@@ -185,7 +206,7 @@
     // darkened, "burnt" rim just outside each cut
     if (uTintOn == 0 && uInvert == 0) {
       float rim = smoothstep(uThresh * 0.35, uThresh, B) * (1.0 - cut);
-      col *= 1.0 - 0.28 * rim;
+      col *= 1.0 - uRim * rim;
     }
 
     float shape = uInvert == 1 ? cut : vis * (1.0 - cut);
@@ -298,6 +319,7 @@
       this.ok = false;
       this.hasTex = false;
       this.seeds = [];
+      this.ripples = [];
       this.steps = 0;
       this.dpr = 1;
       const gl = canvas.getContext("webgl2", { premultipliedAlpha: true, antialias: false, alpha: true });
@@ -398,11 +420,53 @@
         const an = Math.min(1, Math.max(0, (nAn[i] - 0.4) * 2.0)) * aniso;
         px[i * 4] = m * 255; px[i * 4 + 1] = nTh[i] * 255; px[i * 4 + 2] = an * 255; px[i * 4 + 3] = 255;
       }
+      this.paramPx = px;
+      this.ripples = [];
+      this._uploadParams();
+    }
+
+    _uploadParams() {
+      const gl = this.gl, W = this.W, H = this.H, px = this.paramPx;
       if (!this.params) this.params = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, this.params);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    }
+
+    /**
+     * A new pattern rippling out from (x, y) (cell units) to radius R: the
+     * parameters inside the circle are replaced by a new set (o: seed, dotBias,
+     * anisotropy), and a ring sweeps outwards over o.steps steps clearing the
+     * old pattern so the new one grows in behind it.
+     */
+    ripple(x, y, R, o = {}) {
+      if (!this.ok || !this.paramPx) return;
+      const W = this.W, H = this.H, seed = o.seed ?? (1 + Math.floor(Math.random() * 9999));
+      const bias = o.dotBias ?? this.opts.dotBias, aniso = o.anisotropy ?? this.opts.anisotropy;
+      const nMix = periodicNoise(W, H, 60, seed * 13 + 1);
+      const nTh  = periodicNoise(W, H, 90, seed * 17 + 2);
+      const nAn  = periodicNoise(W, H, 70, seed * 19 + 4);
+      const px = this.paramPx;
+      for (let j = 0; j < H; j++) {
+        let dy = Math.abs(j + 0.5 - y); dy = Math.min(dy, H - dy);
+        if (dy >= R) continue;
+        for (let i = 0; i < W; i++) {
+          let dx = Math.abs(i + 0.5 - x); dx = Math.min(dx, W - dx);
+          const d = Math.hypot(dx, dy) / R;
+          if (d >= 1) continue;
+          const t = Math.min(1, Math.max(0, (d - 0.7) / 0.3)), k = 1 - t * t * (3 - 2 * t);
+          const n = j * W + i, q = n * 4;
+          const m = Math.min(1, Math.max(0, (nMix[n] - 0.45 + bias * 0.55) * 3.0));
+          const an = Math.min(1, Math.max(0, (nAn[n] - 0.4) * 2.0)) * aniso;
+          px[q]     = px[q]     + (m * 255 - px[q]) * k;
+          px[q + 1] = px[q + 1] + (nTh[n] * 255 - px[q + 1]) * k;
+          px[q + 2] = px[q + 2] + (an * 255 - px[q + 2]) * k;
+        }
+      }
+      this._uploadParams();
+      this.ripples.push({ x, y, R, r: 0, dr: R / (o.steps || 2000), w: o.band || 2.5 });
+      if (this.ripples.length > 4) this.ripples.shift();
     }
 
     /** Clear the grid back to empty. */
@@ -415,6 +479,7 @@
         gl.texImage2D(gl.TEXTURE_2D, 0, this.fmt, this.W, this.H, 0, gl.RGBA, gl.FLOAT, init);
       }
       this.steps = 0;
+      this.ripples = [];
     }
 
     /** Queue a seed (cell units). mode −1 erases. */
@@ -438,7 +503,12 @@
       gl.uniform1i(P.u.uState, 0);
       const seedArr = new Float32Array(MAX_SEEDS * 4);
       this.seeds.forEach((s, i) => seedArr.set(s, i * 4));
+      const rip = new Float32Array(16);
       for (let i = 0; i < n; i++) {
+        let k = 0;
+        for (const q of this.ripples) { if (k < 4 && q.r < q.R) rip.set([q.x, q.y, q.r, q.w], 4 * k++); q.r += q.dr; }
+        gl.uniform4fv(P.u.uRip, rip);
+        gl.uniform1i(P.u.uRipN, k);
         gl.uniform1i(P.u.uSeedCount, i === 0 ? this.seeds.length : 0);
         if (i === 0) gl.uniform4fv(P.u.uSeeds, seedArr);
         gl.activeTexture(gl.TEXTURE0);
@@ -449,6 +519,7 @@
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       this.seeds.length = 0;
+      this.ripples = this.ripples.filter(q => q.r < q.R);
       this.steps += n;
     }
 
@@ -527,6 +598,7 @@
       gl.uniform4fv(P.u.uRamp, o.ramp || [0, 0, 1, 1]);
       gl.uniform1f(P.u.uPale, o.pale || 0);
       gl.uniform1i(P.u.uMono, o.mono ? 1 : 0);
+      gl.uniform1f(P.u.uRim, o.rim == null ? 0.28 : o.rim);
       gl.uniform4fv(P.u.uRects, R);
       gl.uniform4fv(P.u.uOffs, O);
       gl.uniform4fv(P.u.uStyle, A);

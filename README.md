@@ -132,10 +132,28 @@ you like, and commit.
 
 ## Changing the look of the pattern
 
-* **Steel texture:** replace `assets/img/texture.jpg` (square, ~900–1200 px).
-* **Active area:** on wide screens everything sits inside a margin: `--ax`
-  (left), `--ax2` (right) and `--mt` (top and bottom) at the top of
-  `css/style.css`; `--sl` is the width of the right-hand pattern strip.
+* **Steel texture:** `assets/img/texture.jpg` (square, ~900–1200 px) is the
+  cor-ten. The colour version uses `assets/img/texture-blue.jpg`, a recolouring
+  of it into the teals, blues, violet and green of the mockup; the black and
+  white version still uses the original. To use the cor-ten again, change
+  `TEXTURE` in `js/main.js` (and `RIM`, the dark edge around the cuts:
+  0 = clean white cuts).
+* **Grid (wide screens):** the home page sits on a grid of 15 × 8 square
+  modules, centred in the window. The module `--u` and the margins (`--pl`
+  left, `--mt` top and bottom) are in the `@media (min-width: 821px)` block
+  at the end of `css/style.css`, followed by the placement of each part in
+  modules: "Anant National University" at the top left (`.org`, the text is in
+  `index.html`), pattern in columns 1–6 / rows 2–8, headline and text from
+  column 7, "Turning Point." (in `--title-ink`, the blue) and the menu at
+  column 12, the links in row 1 beside an outline square (`.mark`) at the
+  top of column 15, the pattern strip in column 15, rows 3–8. Add `?grid` to the address to see the grid
+  drawn over the page.
+* **Fonts:** headings use `--display` ("Argent CF" first, then the
+  self-hosted stand-in Fraunces, bold, as "TP Display"); text uses `--text`
+  ("Gyst" first, then Commissioner as "TP Text"). The stand-ins are in
+  `assets/fonts/`. Once Argent CF and Gyst are licensed for the web, add
+  their `@font-face` rules (or the Adobe Fonts link for Argent) at the top of
+  `css/style.css` and they take over with no other change.
 * **Opening text:** `preface` in `js/content.js` (first line, paragraphs,
   button label; also in the editor under "Title, intro & links"). It shows
   before the pattern and the title until the button is pressed, then
@@ -143,20 +161,29 @@ you like, and commit.
   beneath it. It is skipped
   on links straight to a section (`#explore`) and once it has been seen in
   that browser tab. Empty it to go straight to the site.
-* **Blocks:** the rows are cut into blocks on a grid of squares (squares,
-  rectangles and L shapes) with no gaps between them. Every square is split
-  into smaller squares (`TILE_SUB`, 2 = 2×2) and 30% of them are left empty
-  (`TILE_EMPTY`): bitten out of the edges of the pattern area, with two or
-  three (`TILE_INNER`) singly in the middle, so the area has a different
-  ragged outline on each visit (`shapeMask`). Blocks show the steel texture at
-  different zooms (`TILE_ZOOMS`; above 1 = smaller and denser), except two
-  drawn as ink outlines, and each travels its own distance with the mouse. On
-  wide screens two more blocks step out of the column to the right (an outline
-  block beside the top row, a steel block beside the second-last row); the
-  first intro paragraph, set larger, starts to the right of the top one. The
-  right-hand strip is cut into squares too, emptied at random. All of this is
-  in `gridPlan` and `layout` in `js/main.js`. (The engine still has a
-  clay-relief style, `style: 2`, unused for now.)
+* **Blocks:** the pattern area is cut into blocks on a grid of squares
+  (squares, 2×2 blocks, rectangles and L shapes) with no gaps between them.
+  Every square is split into smaller squares (`TILE_SUB`, 2 = 2×2) and about
+  half of them are left empty (`TILE_EMPTY`, now 0.48): bitten out of the
+  edges, with a few holes (`TILE_INNER`, 3–6) in the middle, some of them a
+  whole square, so the area has a different incomplete outline on each
+  visit (`shapeMask`). Blocks show the steel texture at different zooms
+  (`TILE_ZOOMS`), and a few are drawn as ink outlines. The right-hand strip
+  is cut the same way (`SLIVER_EMPTY`, 0.25). All of this is in `gridPlan`
+  and `layout` in `js/main.js`.
+* **Click to ripple:** clicking anywhere in the pattern area (or the strip)
+  ripples a new pattern out from that point: inside a circle (`RIPPLE_R`, a
+  share of the pattern's height) the pattern changes character, towards
+  lines or dots, a new direction, stronger or weaker alignment, and a ring
+  sweeps outwards (`RIPPLE_STEPS`) clearing the old pattern so the new one
+  grows in behind it. The squares stay as they are. `rippleAt()` in
+  `js/main.js`, `ripple()` in `js/rd.js`.
+* **Menu hover:** on wide screens, hovering a menu item spreads a pattern
+  through its letters from the cursor: the word fills with the blue steel cut
+  by white channels. It is a small second simulation on a canvas over the
+  menu (section 7 of `js/main.js`): `CELL_EM` sets how fine it is, `SPREAD`
+  how fast it spreads, `SEED_GAP` how densely it is sown. It is off on touch
+  screens and in the black-and-white theme.
 * **Motion speed:** two variables at the top of `css/style.css`. `--speed`
   sets every transition and entrance (boxes, images, the strips sliding away,
   section changes, the opening sequence, hovers); `--pattern-speed` sets how
@@ -182,7 +209,7 @@ you like, and commit.
   behind the strips), `--bg-text` (fraction of that behind the text),
   `--bg-tile` (tile size — smaller is denser).
 * **Black and white / colour:** `<html data-theme="mono">` in `index.html`
-  gives the black-and-white version on paper (`assets/img/paper.jpg`; the colour version uses it at 40%, pre-blended as `paper-40.jpg`), with
+  gives the black-and-white version on paper (`assets/img/paper.jpg`; the colour version is now on plain white, `--surface`), with
   the steel in greyscale, photos in greyscale and slightly bled, ink-like
   type. The default is now `data-theme="color"`; change it to `mono` for black and white — or try
   either without editing with `?theme=color` / `?theme=mono` in the address.
