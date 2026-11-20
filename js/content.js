@@ -9,9 +9,9 @@ window.SITE = {
   "title": "Turning Point",
   "meta": "",
   "preface": {
-    "lead": "When does a fleeting thought become a tangible form?",
+    "lead": "",
     "paragraphs": [
-      "Inspired by Tat-Tvam-Asi (\"I am That\"), the Turning Point project bridges the eternal and the transient, dissolving individual authorship into collective creation. Much like wave-particle duality, the process moves between control and surrender—riding the fluid wave of ideas before shaping them into physical reality.",
+      "The act of becoming is constant negotiation, filled with many choices and decisions. Who takes the decision and for what?\n\nEvery work begins with a set of intentions, yet true transformation happens in the friction of making—when thought is forced to take physical form. Here, design, people, and material converge to test and blur their own boundaries.\n\nTurning Point is that point where the process of deciding and making dissolves into being.",
       "Through trust, materiality, and shared inquiry, learning becomes a living negotiation. Here, process and meaning merge, inviting us to witness how we shape the world as it shapes us."
     ],
     "button": "Enter"
