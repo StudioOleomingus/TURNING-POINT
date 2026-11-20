@@ -27,6 +27,8 @@
   const ROMAN = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const lerp = (a, b, t) => a + (b - a) * t;
+  // fast out of the blocks, a slight overshoot, then settled (the strips' slide)
+  const snapOut = t => { const c = 1.25; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
   const easeInOut = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   const esc = s => String(s == null ? "" : s).replace(/"/g, "&quot;");
@@ -406,25 +408,25 @@
 
     if (S.started && rd.steps < S.simTarget) {
       seedSpiral();
-      // time-based pacing (~2400 steps/s), capped so slow GPUs stay responsive
-      const n = S.fast ? 160 : clamp(Math.round(2400 * dt), 6, 90);
+      // time-based pacing (~4200 steps/s), capped so slow GPUs stay responsive
+      const n = S.fast ? 160 : clamp(Math.round(4200 * dt), 8, 140);
       rd.step(Math.min(n, S.simTarget - rd.steps));
       simming = true;
     }
 
-    moving = approach("gap", 3.2, dt) || moving;
-    moving = approach("fill", 0.9, dt) || moving;
-    moving = approach("twistIntro", 1.6, dt) || moving;
-    moving = approach("ptr", 2.4, dt) || moving;
-    moving = approach("ptrY", 2.4, dt) || moving;
-    moving = approach("scroll", 6, dt) || moving;
-    moving = approach("turn", 2.2, dt) || moving;
-    moving = approach("single", 3.4, dt) || moving;
+    moving = approach("gap", 8, dt) || moving;
+    moving = approach("fill", 2.4, dt) || moving;
+    moving = approach("twistIntro", 4.5, dt) || moving;
+    moving = approach("ptr", 4.5, dt) || moving;
+    moving = approach("ptrY", 4.5, dt) || moving;
+    moving = approach("scroll", 10, dt) || moving;
+    moving = approach("turn", 5.5, dt) || moving;
+    moving = approach("single", 8, dt) || moving;
 
     S.strips.forEach(s => {
       if (s.p === s.to) return;
       const t = clamp((now - s.t0 - s.delay) / s.dur, 0, 1);
-      s.p = t >= 1 ? s.to : lerp(s.from, s.to, t);
+      s.p = t >= 1 ? s.to : lerp(s.from, s.to, snapOut(t));
       moving = true;
     });
 
@@ -443,8 +445,8 @@
     const now = performance.now(), n = S.strips.length;
     S.strips.forEach((s, i) => {
       s.from = s.p; s.to = to; s.t0 = now;
-      s.dur = 1000;
-      s.delay = (to ? i : n - 1 - i) * 45;
+      s.dur = 420;
+      s.delay = (to ? i : n - 1 - i) * 18;
     });
     kick();
   }
@@ -491,21 +493,21 @@
     startSim();
     titleEl.classList.add("is-in");
 
-    await until(() => !rd.ok || !S.started || rd.steps > 4200, 5200);
+    await until(() => !rd.ok || !S.started || rd.steps > 4200, 3200);
 
     // layers separate and turn
     S.fillT = 1; S.gapT = 1; S.twistIntroT = 1; kick();
     root.classList.add("bg-in");
     introEl.classList.add("is-in");
-    await wait(900);
+    await wait(320);
     navEl.classList.add("is-in");
     metaEl.classList.add("is-in");
-    await wait(1200);
+    await wait(500);
 
     root.classList.remove("is-intro");
     titleEl.classList.add("is-settled");
     navEl.classList.add("is-settled");
-    setTimeout(() => root.classList.remove("is-skip"), 400);
+    setTimeout(() => root.classList.remove("is-skip"), 200);
   }
 
   /* =====================================================================
@@ -826,7 +828,7 @@
     }, { rootMargin: "0px 0px -6% 0px" });
     panel.querySelectorAll(".box").forEach(b => io.observe(b));
     // once the first boxes are in, later ones should not wait for the strips
-    setTimeout(() => panel.style.setProperty("--wait", "0ms"), waitMs + 600);
+    setTimeout(() => panel.style.setProperty("--wait", "0ms"), waitMs + 300);
   }
 
   let current = "";
@@ -848,20 +850,20 @@
     setActive(id);
     clearTimeout(swapTimer);
     S.turnT += 90;              // every move turns the layers a little further
-    busy(1600);
+    busy(900);
 
     if (!was) {
       root.classList.add("is-panel");
       const mobile = mqMobile.matches;
       if (!mobile) collapse(1);
-      renderPanel(sec, mobile ? 0 : 680);   // let the strips clear first
+      renderPanel(sec, mobile ? 0 : 260);   // let the strips get going first
       if (mobile) { window.scrollTo({ top: 0 }); S.singleT = 1; }
     } else {
       panel.classList.add("is-leaving");
       swapTimer = setTimeout(() => {
         panel.classList.remove("is-leaving");
         renderPanel(sec, 0);
-      }, 320);
+      }, 150);
     }
     if (mqMobile.matches || !root.classList.contains("side-open")) panel.focus({ preventScroll: true });
     document.title = `${sec.label} — ${SITE.title}`;
@@ -873,7 +875,7 @@
     setActive("");
     hideSide(true);
     S.turnT -= 90;
-    busy(1600);
+    busy(900);
     panel.classList.add("is-leaving");
     S.singleT = 0;
     if (!mqMobile.matches) collapse(0);
@@ -881,7 +883,7 @@
       root.classList.remove("is-panel");
       panel.classList.remove("is-leaving");
       panel.innerHTML = "";
-    }, 360);
+    }, 170);
     document.title = `${SITE.title} — ${SITE.meta}`;
   }
 
@@ -1106,7 +1108,7 @@
       const body = el.querySelector(".preface__body"), fn = el.querySelector("feFuncA");
       if (reduced || !fn) { el.remove(); return; }
       body.style.filter = "url(#dissolve)";
-      const t0 = performance.now(), DUR = 2600;
+      const t0 = performance.now(), DUR = 1500;
       (function step(now) {
         const k = Math.min(1, (now - t0) / DUR), th = k * k * (3 - 2 * k) * 1.04 - .02;
         fn.setAttribute("intercept", (.5 - 30 * th).toFixed(3));

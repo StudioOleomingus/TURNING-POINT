@@ -157,6 +157,13 @@ you like, and commit.
   right-hand strip is cut into squares too, emptied at random. All of this is
   in `gridPlan` and `layout` in `js/main.js`. (The engine still has a
   clay-relief style, `style: 2`, unused for now.)
+* **Motion:** fast in, crisp stop. The curves are `--ease`, `--ease-out` and
+  `--snap` (a slight overshoot that settles, for things that slide in) at the
+  top of `css/style.css`; durations sit beside each `transition`. Images are
+  uncovered from the left while sliding in. The strips' slide when a section
+  opens is `collapse()` in `js/main.js` (420 ms), the pattern's growth speed
+  is the steps-per-second in `tick()`, and the easing of the mouse-follow,
+  turn and twist is the `approach(...)` rates there.
 * **Density:** `DENSITY` at the top of `js/main.js` (1 = the first version,
   2 = twice as fine). Try values without editing by adding `?density=1.5` to
   the address. Phones are capped at `DENSITY_PHONE_MAX` (1.5): finer cuts
