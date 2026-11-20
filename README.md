@@ -157,6 +157,11 @@ you like, and commit.
   right-hand strip is cut into squares too, emptied at random. All of this is
   in `gridPlan` and `layout` in `js/main.js`. (The engine still has a
   clay-relief style, `style: 2`, unused for now.)
+* **Motion speed:** two variables at the top of `css/style.css`. `--speed`
+  sets every transition and entrance (boxes, images, the strips sliding away,
+  section changes, the opening sequence, hovers); `--pattern-speed` sets how
+  fast the pattern grows and follows the mouse. 1 = as built, 0.5 = half as
+  fast, 2 = twice as fast. Both are now 0.5.
 * **Motion:** fast in, crisp stop. The curves are `--ease`, `--ease-out` and
   `--snap` (a slight overshoot that settles, for things that slide in) at the
   top of `css/style.css`; durations sit beside each `transition`. Images are

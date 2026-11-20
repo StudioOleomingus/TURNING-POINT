@@ -16,6 +16,11 @@
     try { const d = localStorage.getItem("tp-draft"); if (d) SITE = JSON.parse(d); } catch (e) { /* fall back to published content */ }
   }
   const root = document.documentElement;
+  // Motion speeds, from --speed and --pattern-speed at the top of css/style.css
+  // (1 = as built, 0.5 = half as fast). T(ms): a duration at the current speed.
+  const cssNum = (name, d) => { const v = parseFloat(getComputedStyle(root).getPropertyValue(name)); return v > 0 ? v : d; };
+  const SPEED = cssNum("--speed", 1), PSPEED = cssNum("--pattern-speed", 1);
+  const T = ms => ms / SPEED;
   const $ = (s, el = document) => el.querySelector(s);
   const frame = $("#frame"), canvas = $("#pattern"), stage = $("#stage"),
         sliver = $("#sliver"), side = $("#side"), sideHot = $("#sideHot"),
@@ -409,19 +414,19 @@
     if (S.started && rd.steps < S.simTarget) {
       seedSpiral();
       // time-based pacing (~4200 steps/s), capped so slow GPUs stay responsive
-      const n = S.fast ? 160 : clamp(Math.round(4200 * dt), 8, 140);
+      const n = S.fast ? 160 : clamp(Math.round(4200 * PSPEED * dt), 8, 140);
       rd.step(Math.min(n, S.simTarget - rd.steps));
       simming = true;
     }
 
-    moving = approach("gap", 8, dt) || moving;
-    moving = approach("fill", 2.4, dt) || moving;
-    moving = approach("twistIntro", 4.5, dt) || moving;
-    moving = approach("ptr", 4.5, dt) || moving;
-    moving = approach("ptrY", 4.5, dt) || moving;
-    moving = approach("scroll", 10, dt) || moving;
-    moving = approach("turn", 5.5, dt) || moving;
-    moving = approach("single", 8, dt) || moving;
+    moving = approach("gap", 8 * SPEED, dt) || moving;
+    moving = approach("fill", 2.4 * SPEED, dt) || moving;
+    moving = approach("twistIntro", 4.5 * SPEED, dt) || moving;
+    moving = approach("ptr", 4.5 * PSPEED, dt) || moving;
+    moving = approach("ptrY", 4.5 * PSPEED, dt) || moving;
+    moving = approach("scroll", 10 * PSPEED, dt) || moving;
+    moving = approach("turn", 5.5 * PSPEED, dt) || moving;
+    moving = approach("single", 8 * SPEED, dt) || moving;
 
     S.strips.forEach(s => {
       if (s.p === s.to) return;
@@ -445,8 +450,8 @@
     const now = performance.now(), n = S.strips.length;
     S.strips.forEach((s, i) => {
       s.from = s.p; s.to = to; s.t0 = now;
-      s.dur = 420;
-      s.delay = (to ? i : n - 1 - i) * 18;
+      s.dur = T(420);
+      s.delay = (to ? i : n - 1 - i) * T(18);
     });
     kick();
   }
@@ -493,21 +498,21 @@
     startSim();
     titleEl.classList.add("is-in");
 
-    await until(() => !rd.ok || !S.started || rd.steps > 4200, 3200);
+    await until(() => !rd.ok || !S.started || rd.steps > 4200, 3200 / PSPEED);
 
     // layers separate and turn
     S.fillT = 1; S.gapT = 1; S.twistIntroT = 1; kick();
     root.classList.add("bg-in");
     introEl.classList.add("is-in");
-    await wait(320);
+    await wait(T(320));
     navEl.classList.add("is-in");
     metaEl.classList.add("is-in");
-    await wait(500);
+    await wait(T(500));
 
     root.classList.remove("is-intro");
     titleEl.classList.add("is-settled");
     navEl.classList.add("is-settled");
-    setTimeout(() => root.classList.remove("is-skip"), 200);
+    setTimeout(() => root.classList.remove("is-skip"), T(200));
   }
 
   /* =====================================================================
@@ -828,7 +833,7 @@
     }, { rootMargin: "0px 0px -6% 0px" });
     panel.querySelectorAll(".box").forEach(b => io.observe(b));
     // once the first boxes are in, later ones should not wait for the strips
-    setTimeout(() => panel.style.setProperty("--wait", "0ms"), waitMs + 300);
+    setTimeout(() => panel.style.setProperty("--wait", "0ms"), T(waitMs + 300));
   }
 
   let current = "";
@@ -850,20 +855,20 @@
     setActive(id);
     clearTimeout(swapTimer);
     S.turnT += 90;              // every move turns the layers a little further
-    busy(900);
+    busy(T(900));
 
     if (!was) {
       root.classList.add("is-panel");
       const mobile = mqMobile.matches;
       if (!mobile) collapse(1);
-      renderPanel(sec, mobile ? 0 : 260);   // let the strips get going first
+      renderPanel(sec, mobile ? 0 : 260);   // let the strips get going first (CSS scales it by --speed)
       if (mobile) { window.scrollTo({ top: 0 }); S.singleT = 1; }
     } else {
       panel.classList.add("is-leaving");
       swapTimer = setTimeout(() => {
         panel.classList.remove("is-leaving");
         renderPanel(sec, 0);
-      }, 150);
+      }, T(150));
     }
     if (mqMobile.matches || !root.classList.contains("side-open")) panel.focus({ preventScroll: true });
     document.title = `${sec.label} — ${SITE.title}`;
@@ -875,7 +880,7 @@
     setActive("");
     hideSide(true);
     S.turnT -= 90;
-    busy(900);
+    busy(T(900));
     panel.classList.add("is-leaving");
     S.singleT = 0;
     if (!mqMobile.matches) collapse(0);
@@ -883,7 +888,7 @@
       root.classList.remove("is-panel");
       panel.classList.remove("is-leaving");
       panel.innerHTML = "";
-    }, 170);
+    }, T(170));
     document.title = `${SITE.title} — ${SITE.meta}`;
   }
 
@@ -906,9 +911,12 @@
   /* --------------------------------------------------------------------
      Right-edge menu (desktop, section open)
      -------------------------------------------------------------------- */
+  // true: in a section, hovering the right edge slides the menu back in. false: it stays away.
+  const SIDE_MENU = false;
+  root.classList.toggle("side-menu", SIDE_MENU);
   let sideT = 0;
   function showSide() {
-    if (!current || mqMobile.matches) return;
+    if (!SIDE_MENU || !current || mqMobile.matches) return;
     clearTimeout(sideT);
     if (!root.classList.contains("side-open")) { root.classList.add("side-open"); S.turnT += 24; kick(); }
   }
@@ -1108,7 +1116,7 @@
       const body = el.querySelector(".preface__body"), fn = el.querySelector("feFuncA");
       if (reduced || !fn) { el.remove(); return; }
       body.style.filter = "url(#dissolve)";
-      const t0 = performance.now(), DUR = 1500;
+      const t0 = performance.now(), DUR = T(1500);
       (function step(now) {
         const k = Math.min(1, (now - t0) / DUR), th = k * k * (3 - 2 * k) * 1.04 - .02;
         fn.setAttribute("intercept", (.5 - 30 * th).toFixed(3));
