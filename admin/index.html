@@ -248,7 +248,8 @@
     if (kind === "layout") {
       return wrap("", h("select", { onchange: e => set(e.target.value || undefined) },
         h("option", { value: "", selected: !obj.layout }, "Vertical — scroll down"),
-        h("option", { value: "horizontal", selected: obj.layout === "horizontal" }, "Horizontal — scroll sideways, full height")));
+        h("option", { value: "horizontal", selected: obj.layout === "horizontal" }, "Horizontal — scroll sideways, full height"),
+        h("option", { value: "feature", selected: obj.layout === "feature" }, "Feature — one big image carousel beside a column of text")));
     }
     if (kind === "bool") {
       return h("label", { class: "check" }, h("input", { type: "checkbox", checked: !!obj[key], onchange: e => set(e.target.checked) }), label);

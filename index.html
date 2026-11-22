@@ -17,7 +17,7 @@
   <link rel="preload" href="assets/fonts/tp-display-bold-italic.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/tp-text.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
-  <link rel="preload" href="assets/img/texture.jpg" as="image">
+  <link rel="preload" href="assets/img/texture-blue.jpg" as="image">
   <script>if (/[?&]grid\b/.test(location.search)) document.documentElement.classList.add("show-grid");</script>
 
   <script>
@@ -41,6 +41,8 @@
     <!-- Where the pattern sits on the home view; the sliver is the right-edge strip -->
     <div class="stage" id="stage" aria-hidden="true"></div>
     <div class="sliver" id="sliver" aria-hidden="true"></div>
+    <div class="mark" id="mark" aria-hidden="true"></div>
+    <div class="org" id="org"><img src="assets/img/anu-logo.png" alt="Anant National University" width="560" height="224"></div>
 
     <!-- Right column: meta, title, menu. Slides away when a section is open. -->
     <aside class="side" id="side">
@@ -74,7 +76,7 @@
   </svg>
 
   <noscript>
-    <style>.stage{background:url(assets/img/texture.jpg) center/cover}</style>
+    <style>.stage{background:url(assets/img/texture-blue.jpg) center/cover}</style>
   </noscript>
 
   <script src="js/content.js"></script>

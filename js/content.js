@@ -91,7 +91,7 @@ window.SITE = {
       "label": "Structure",
       "heading": "STRUCTURE & PROCESS",
       "lede": "How the structure was designed, created and assembled.",
-      "layout": "horizontal",
+      "layout": "feature",
       "items": [
         {
           "type": "image",

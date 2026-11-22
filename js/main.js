@@ -104,7 +104,8 @@
     busyUntil: 0,
     dirty: true
   };
-  const N_DESKTOP = 7, N_MOBILE = 5;   // desktop: the 7 module rows of the home grid (css: rows 1–7)
+  const N_DESKTOP = 7, N_MOBILE = 5;
+  const LOGO_PAD = .25;      // white space kept round the university logo, in modules (rounded out to the smaller squares)   // desktop: the 7 module rows of the home grid (css: rows 1–7)
   const makeStrips = (n, p = 0) => Array.from({ length: n }, () => ({ p, from: p, to: p, t0: 0, dur: 1, delay: 0 }));
   S.strips = makeStrips(N_DESKTOP);
 
@@ -297,13 +298,16 @@
   }
   // push one part as its kept smaller squares
   // clip: [left, right] edges beyond which nothing is drawn (the active area)
-  function pushSub(rects, x, y, w, h, keep, cols, rows, base, clip) {
+  // keepOut: a rectangle (canvas px) left clear for the university logo; sx: how far the row has slid
+  let keepOut = null;
+  function pushSub(rects, x, y, w, h, keep, cols, rows, base, clip, sx = 0) {
     const cw = w / cols, ch = h / rows;
     for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
       if (!keep[j * cols + i]) continue;
       // round the edges to whole pixels so neighbouring squares meet without seams
       let x0 = Math.round(x + i * cw), x1 = Math.round(x + (i + 1) * cw);
       const y0 = Math.round(y + j * ch), y1 = Math.round(y + (j + 1) * ch);
+      if (keepOut && x0 + sx < keepOut.x1 && x1 + sx > keepOut.x0 && y0 < keepOut.y1 && y1 > keepOut.y0) continue;
       if (clip) { x0 = Math.max(x0, clip[0]); x1 = Math.min(x1, clip[1]); if (x1 <= x0) continue; }
       rects.push(Object.assign({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, base));
     }
@@ -345,7 +349,8 @@
       for (let i = 0; i < n; i++) {
         const d = i - mid, y = home.y + i * (sh + gapPx);
         // the strip starts a row lower (row 3 of the grid); its outline square sits at the top, by the links
-        if (i > 0) pushSub(sliverRects, sv.x, y, sv.w, sh, plan[i], su * TILE_SUB, TILE_SUB, { ox: oxSliver(d), oy: -home.y });
+        // in a section the strip turns to black outlines, row by row as the rows slide away
+        if (i > 0) pushSub(sliverRects, sv.x, y, sv.w, sh, plan[i], su * TILE_SUB, TILE_SUB, { ox: oxSliver(d), oy: -home.y, style: S.strips[i].p > .5 ? 1 : 0 });
         const p = easeInOut(S.strips[i].p);
         // the plate slides out to the left, carrying its pattern with it
         const shift = p * (home.w + sh + 60);
@@ -358,6 +363,16 @@
     }
     const units = gridUnits(home.w, sh, gapPx);
     const uw = (home.w - gapPx * (units - 1)) / units;
+    // the university logo sits in the area's bottom-left corner: the smaller squares around it
+    // (to LOGO_PAD beyond it, rounded out to whole smaller squares) are left empty
+    keepOut = null;
+    if (!mobile && orgEl) {
+      const lg = relRect(orgEl), sub = (uw + gapPx) / TILE_SUB, pad = LOGO_PAD * (uw + gapPx);
+      if (lg.w > 1) keepOut = {
+        x0: home.x - 1, x1: home.x + Math.ceil((lg.x + lg.w + pad - home.x) / sub) * sub - 1,
+        y0: home.y + Math.floor((lg.y - pad - home.y) / sub) * sub + 1, y1: home.y + home.h + 1
+      };
+    }
     for (const b of gridPlan(n, units, false)) {   // (true: two blocks step out of the column, the old layout)
       const row = rows[b.row];                   // a block moves with the row it starts in
       if (!row.on) continue;
@@ -366,7 +381,7 @@
         if (!a.on) continue;
         pushSub(rects, home.x + q.c * (uw + gapPx) - row.shift, a.y, q.cw * (uw + gapPx) - gapPx, z.y + z.h - a.y,
           q.keep, q.cw * TILE_SUB, q.rh * TILE_SUB,
-          { ox: row.ox + px * row.m * (b.k - 1) + (b.dx || 0) * home.w, oy: row.oy + py * row.m * (b.k - 1) + (b.dy || 0) * home.h, style: b.style, zoom: b.zoom }, clip);
+          { ox: row.ox + px * row.m * (b.k - 1) + (b.dx || 0) * home.w, oy: row.oy + py * row.m * (b.k - 1) + (b.dy || 0) * home.h, style: b.style, zoom: b.zoom }, clip, row.shift);
       }
     }
     S.lastRects = rects.concat(sliverRects);
@@ -804,7 +819,7 @@
     const btns = panel.querySelectorAll(".hfoot .rail__btn");
     if (!track) return;
     // lazy loading is unreliable inside a sideways scroller; there are few images, load them now
-    track.querySelectorAll("figure > .media img, .cz__slide:first-child img").forEach(img => { img.loading = "eager"; });
+    track.querySelectorAll("figure > .media img, .cz__slide:first-child img, .card .media img").forEach(img => { img.loading = "eager"; });
     const update = () => {
       const max = Math.max(1, track.scrollWidth - track.clientWidth);
       bar.style.setProperty("--p", (clamp(track.scrollLeft / max, 0, 1) * 100).toFixed(2) + "%");
@@ -850,6 +865,133 @@
   });
   window.addEventListener("pointerup", () => { if (hDrag) hDrag.track.classList.remove("is-drag"); hDrag = null; });
 
+  // headings written in capitals in content.js are set in title case ("STRUCTURE & PROCESS" → "Structure & Process")
+  const SMALL = /^(a|an|and|of|the|in|for|to|at|on|by|with)$/;
+  const titleCase = t => t !== t.toUpperCase() ? t : t.toLowerCase().split(" ")
+    .map((w, i) => i && SMALL.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+  /* --------------------------------------------------------------------
+     Feature sections (layout: "feature" in content.js, wide screens): one
+     big image carousel on the left, the section's text in a column beside
+     it. Click the image to look: it widens under a white veil and the text
+     drops down out of the way (click again for the next image). Scroll to
+     read: the text comes up and runs over the veiled edge of the image.
+     Scrolling up past the top of the text goes back to the image.
+     -------------------------------------------------------------------- */
+  function featureHTML(sec) {
+    // each image belongs to the text before it in content.js (images before the first text, to the first)
+    const slides = [], texts = [];
+    const part = () => Math.max(0, texts.length - 1);
+    for (const it of sec.items || []) {
+      if (it.type === "image") slides.push({ src: it.src, alt: it.alt, cap: it.caption, part: part() });
+      else if (it.type === "carousel") (it.slides || []).forEach(x => slides.push({ src: x.src, alt: x.alt, cap: x.caption, part: part() }));
+      else if (it.type === "video") slides.push({ video: it.src, poster: it.poster, cap: it.caption, part: part() });
+      else if (it.type === "text") texts.push(`<section class="feat__part">${it.title ? `<h3>${it.title}</h3>` : ""}${it.body || ""}</section>`);
+    }
+    const caps = JSON.stringify(slides.map(x => [x.cap || "", x.part])).replace(/</g, "\\u003c");
+    return `<div class="feat is-rest">` +
+      `<div class="box feat__imgbox"><div class="feat__img" tabindex="0" role="group" aria-roledescription="carousel" aria-label="Images — click to look, arrow keys to move">` +
+      `<div class="feat__track">${slides.map((x, i) => `<div class="feat__slide">${x.video
+        ? `<video src="${esc(x.video)}" ${x.poster ? `poster="${esc(x.poster)}"` : ""} muted loop playsinline preload="metadata"></video>`
+        : `<img src="${esc(x.src)}" alt="${esc(x.alt)}" loading="${i < 2 ? "eager" : "lazy"}" decoding="async" draggable="false">`}</div>`).join("")}</div>` +
+      `<div class="feat__veil" aria-hidden="true"></div>` +
+      `<h2 class="feat__title">${titleCase(sec.heading || sec.label)}</h2>` +
+      `<div class="feat__foot"><span class="feat__count"></span>` +
+      `<button class="feat__btn" type="button" data-dir="-1" aria-label="Previous image">←</button>` +
+      `<button class="feat__btn" type="button" data-dir="1" aria-label="Next image">→</button><span class="feat__cap"></span></div>` +
+      `<script type="application/json">${caps}</script></div></div>` +
+      `<button class="feat__back" type="button" data-go="">Back</button>` +
+      `<div class="box feat__text" tabindex="0"><div class="feat__inner">${texts.join("")}</div></div></div>`;
+  }
+
+  function initFeature(feat) {
+    const img = $(".feat__img", feat), track = $(".feat__track", feat), txt = $(".feat__text", feat);
+    const parts = [...feat.querySelectorAll(".feat__part")];
+    const count = $(".feat__count", feat), capEl = $(".feat__cap", feat), btns = feat.querySelectorAll(".feat__btn");
+    let meta = [];
+    try { meta = JSON.parse($("script", img).textContent); } catch (e) { /* none */ }
+    const n = track.children.length;
+    const partOf = i => (meta[i] && meta[i][1]) || 0;
+    let at = 0, state = "rest", upAcc = 0, auto = false;
+    const setState = st => {
+      if (st === state) return;
+      state = st;
+      feat.classList.remove("is-rest", "is-look", "is-read");
+      feat.classList.add("is-" + st);
+      S.turnT += 10; kick();        // a small turn of the strip with each change
+    };
+    // bring a text part to the top of the column (when looking, its start shows at the bottom)
+    const toPart = k => {
+      const el = parts[k];
+      if (!el) return;
+      auto = true;
+      txt.scrollTo({ top: Math.max(0, el.offsetTop - parseFloat(getComputedStyle(el.parentNode).paddingTop)), behavior: "smooth" });
+      clearTimeout(toPart.t); toPart.t = setTimeout(() => { auto = false; }, 700);
+    };
+    const show = (i, fromText) => {
+      const was = partOf(at);
+      at = (i + n) % n;
+      track.style.transform = `translateX(${-at * 100}%)`;
+      count.textContent = `${String(at + 1).padStart(2, "0")} / ${String(n).padStart(2, "0")}`;
+      capEl.textContent = (meta[at] && meta[at][0]) || "";
+      [...track.children].forEach((sl, k) => {
+        const v = $("video", sl);
+        if (v) { if (k === at) v.play().catch(() => {}); else v.pause(); }
+        if (Math.abs(k - at) <= 1) { const im = $("img", sl); if (im) im.loading = "eager"; }
+      });
+      if (!fromText && partOf(at) !== was) toPart(partOf(at));
+    };
+    // click the image: look (the title fades, the text drops down) and the next image; drag to move.
+    let x0 = null, dx = 0, dragged = false;
+    img.addEventListener("pointerdown", e => { if (e.button || e.target.closest("button")) return; x0 = e.clientX; dx = 0; dragged = false; });
+    img.addEventListener("pointermove", e => { if (x0 == null) return; dx = e.clientX - x0; if (Math.abs(dx) > 8) dragged = true; });
+    img.addEventListener("pointerup", () => {
+      if (x0 == null) return;
+      x0 = null;
+      if (dragged) { if (Math.abs(dx) > 40) show(at + (dx < 0 ? 1 : -1)); setState("look"); return; }
+      if (state === "look") show(at + 1); else { setState("look"); if (partOf(at) !== currentPart()) toPart(partOf(at)); }
+    });
+    btns.forEach(b => b.addEventListener("click", e => { e.stopPropagation(); setState("look"); show(at + +b.dataset.dir); }));
+    // leaving the image while looking: the text slides back up, at the part for this image
+    img.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && state === "look") setState("read"); });
+    img.addEventListener("keydown", e => {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); setState("look"); show(at + (e.key === "ArrowRight" ? 1 : -1)); }
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setState("look"); }
+    });
+    txt.addEventListener("click", () => setState("read"));
+    txt.addEventListener("focus", () => setState("read"));
+    // which part is at the top of the column
+    const currentPart = () => {
+      const y = txt.scrollTop + txt.clientHeight * .25;
+      let k = 0;
+      parts.forEach((el, i) => { if (el.offsetTop <= y) k = i; });
+      return k;
+    };
+    // scrolling anywhere in the section reads the text; up past its top goes back to the image
+    feat.addEventListener("wheel", e => {
+      const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : 0;
+      if (!d) return;
+      e.preventDefault();
+      if (state === "look") { if (d > 0) setState("read"); return; }
+      if (d < 0 && txt.scrollTop <= 0) {
+        upAcc -= d;
+        if (upAcc > 140) { upAcc = 0; setState("look"); }
+        return;
+      }
+      upAcc = 0;
+      setState("read");
+      txt.scrollTop += d;
+    }, { passive: false });
+    // reading on into another part brings up that part's first image
+    txt.addEventListener("scroll", () => {
+      S.scrollT = txt.scrollTop * .5; kick();
+      if (auto) return;
+      const k = currentPart();
+      if (k !== partOf(at)) { const i = meta.findIndex(m => m[1] === k); if (i >= 0) show(i, true); }
+    }, { passive: true });
+    show(0, true);
+  }
+
   let io = null;
   function renderPanel(sec, waitMs) {
     figN = 0;
@@ -857,9 +999,13 @@
     const idx = SITE.sections.indexOf(sec);
     panel.style.setProperty("--wait", waitMs + "ms");
     const horiz = sec.layout === "horizontal";
-    panel.classList.toggle("is-h", horiz);
-    panel.innerHTML =
-      `<header class="box phead"><h2><span class="num">${ROMAN[idx]}.</span>${sec.heading || sec.label}</h2>` +
+    const feature = sec.layout === "feature" && !mqMobile.matches;
+    panel.classList.toggle("is-h", horiz && !feature);
+    // a sideways section of nothing but explorations: just the thumbnails (MOCK M5)
+    panel.classList.toggle("is-cards", horiz && !feature && (sec.items || []).length > 0 && sec.items.every(it => it.type === "project"));
+    panel.classList.toggle("is-feat", feature);
+    panel.innerHTML = feature ? featureHTML(sec) :
+      `<header class="box phead"><h2><span class="num">${ROMAN[idx]}.</span>${titleCase(sec.heading || sec.label)}</h2>` +
       `<div class="phead__aside">${sec.lede ? `<p class="lede">${sec.lede}</p>` : "<span></span>"}` +
       `<button class="back" type="button" data-go=""><span class="arrow" aria-hidden="true">←</span>Back</button></div></header>` +
       (horiz
@@ -873,6 +1019,7 @@
     panel.querySelectorAll(".rail").forEach(initRail);
     panel.querySelectorAll(".cz").forEach(initCarousel);
     if (horiz) initHTrack();
+    panel.querySelectorAll(".feat").forEach(initFeature);
 
     if (io) io.disconnect();
     io = new IntersectionObserver(entries => {

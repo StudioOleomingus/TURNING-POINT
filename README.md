@@ -142,12 +142,61 @@ you like, and commit.
   modules, centred in the window. The module `--u` and the margins (`--pl`
   left, `--mt` top and bottom) are in the `@media (min-width: 821px)` block
   at the end of `css/style.css`, followed by the placement of each part in
-  modules: "Anant National University" at the top left (`.org`, the text is in
-  `index.html`), pattern in columns 1–6 / rows 2–8, headline and text from
+  modules: pattern in columns 1–6 / rows 2–8, with the university logo
+  (`assets/img/anu-logo.png`, `.org` in `index.html`) in its bottom-left
+  corner; the smaller squares round the logo, to `LOGO_PAD` (a quarter module)
+  beyond it and rounded out to whole smaller squares, are always left empty
+  so the pattern never covers it (`keepOut` in `js/main.js`). On phones the
+  logo sits under the pattern; headline and text from
   column 7, "Turning Point." (in `--title-ink`, the blue) and the menu at
   column 12, the links in row 1 beside an outline square (`.mark`) at the
   top of column 15, the pattern strip in column 15, rows 3–8. Add `?grid` to the address to see the grid
   drawn over the page.
+* **Section pages (wide screens):** the same grid, fonts and blue. A section
+  sits in columns 1–14 below the top row: its title in row 2 (in
+  title case: headings written in capitals in `content.js` are converted), the
+  lede in columns 7–10 like the home page's text, "← Back." at the end of
+  column 14, and the content from row 3. In the sideways sections every
+  image, text column and card is a whole number of modules wide (images are
+  rounded to the nearest module and cropped a little to fit; text columns
+  are 4 modules, cards 3), less a small gap `--hg`, so everything starts on a
+  module line. Events and credits use 14 module columns (`span` 1–4 in
+  `content.js` = 4, 7, 10 or 14 modules). The block "Section pages on the
+  home page's grid" near the end of `css/style.css`.
+* **Feature layout (Structure & Process):** `"layout": "feature"` in
+  `content.js` (or "Feature" in the editor). On wide screens the section fills
+  the frame: every image, carousel slide and video of the section in one big
+  carousel on the left (columns 1–9, full height) with the title over it in
+  white, and all its text in one column (9½–13½) beside it. Click the image to
+  look: the title fades, the image widens to column 11 and the text drops down
+  so only the start of its part shows at the bottom, the white veil dropping
+  with it so it lies only under the text;
+  click again for the next image (or drag, or the arrows that show on hover).
+  Each image belongs to the text before it in `content.js` (images before the
+  first text, to the first), so the column follows the image: flipping to an
+  image of another part brings that part's text up. Moving the mouse off the
+  image slides the text back up. Scroll to read: the text runs over the veiled
+  edge of the image, and reading on into another part brings up its first
+  image; scrolling up past the top goes back to the image. The CSS block
+  "Feature section" at the end of `css/style.css`, `initFeature()` in
+  `js/main.js`. Phones show the section as a normal page.
+* **Explorations:** a sideways section made only of explorations (`project`
+  items) shows just the thumbnails, each with its number and title, linking to
+  the exploration: no description or status (on phones too). On wide screens
+  the title sits at the top left, the cards
+  (5 : 7 thumbnails) run from under it to the bottom of the frame and are cut
+  at column 13; scroll or drag sideways for the rest. The CSS block
+  "Explorations" at the end of `css/style.css`.
+* **Strip in the sections:** while a section is open the pattern strip on the
+  right is drawn as black outlines, row by row as the rows slide away
+  (`style` of the strip's squares in `layout()` in `js/main.js`).
+* **Colour:** `--accent` (the blue, `#449ad4`) at the top of `css/style.css`
+  is used for every highlight: "Turning Point.", the section numbers, figure
+  numbers, dates, links and the active menu item, on phones too.
+* **Phones:** "Turning Point." and the
+  links, the text, the pattern under the text and the logo under that; the menu at the bottom is
+  in the bold italic of the wide-screen menu. The block "Phones" at the end
+  of `css/style.css`.
 * **Fonts:** headings use `--display` ("Argent CF" first, then the
   self-hosted stand-in Fraunces, bold, as "TP Display"); text uses `--text`
   ("Gyst" first, then Commissioner as "TP Text"). The stand-ins are in
@@ -171,13 +220,11 @@ you like, and commit.
   (`TILE_ZOOMS`), and a few are drawn as ink outlines. The right-hand strip
   is cut the same way (`SLIVER_EMPTY`, 0.25). All of this is in `gridPlan`
   and `layout` in `js/main.js`.
-* **Click to ripple:** clicking anywhere in the pattern area (or the strip)
-  ripples a new pattern out from that point: inside a circle (`RIPPLE_R`, a
-  share of the pattern's height) the pattern changes character, towards
-  lines or dots, a new direction, stronger or weaker alignment, and a ring
-  sweeps outwards (`RIPPLE_STEPS`) clearing the old pattern so the new one
-  grows in behind it. The squares stay as they are. `rippleAt()` in
-  `js/main.js`, `ripple()` in `js/rd.js`.
+* **Mouse:** on wide screens the pattern inside the squares pans with the
+  mouse, left and right (and a little up and down).
+* **Click ripple:** a click in the pattern area ripples a new pattern out
+  from that point (`RIPPLE_R`, `RIPPLE_STEPS` in `js/main.js`; `ripple()` in
+  `js/rd.js`).
 * **Menu hover:** on wide screens, hovering a menu item spreads a pattern
   through its letters from the cursor: the word fills with the blue steel cut
   by white channels. It is a small second simulation on a canvas over the
