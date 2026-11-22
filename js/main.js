@@ -350,7 +350,8 @@
         const d = i - mid, y = home.y + i * (sh + gapPx);
         // the strip starts a row lower (row 3 of the grid); its outline square sits at the top, by the links
         // in a section the strip turns to black outlines, row by row as the rows slide away
-        if (i > 0) pushSub(sliverRects, sv.x, y, sv.w, sh, plan[i], su * TILE_SUB, TILE_SUB, { ox: oxSliver(d), oy: -home.y, style: S.strips[i].p > .5 ? 1 : 0 });
+        // a row of the strip is drawn where the strip (.sliver) covers that row (css/layout.css can move it)
+        if (y + sh / 2 > sv.y && y + sh / 2 < sv.y + sv.h) pushSub(sliverRects, sv.x, y, sv.w, sh, plan[i], su * TILE_SUB, TILE_SUB, { ox: oxSliver(d), oy: -home.y, style: S.strips[i].p > .5 ? 1 : 0 });
         const p = easeInOut(S.strips[i].p);
         // the plate slides out to the left, carrying its pattern with it
         const shift = p * (home.w + sh + 60);
@@ -1007,6 +1008,7 @@
     panel.classList.toggle("is-cards", horiz && !feature && (sec.items || []).length > 0 && sec.items.every(it => it.type === "project"));
     panel.classList.toggle("is-feat", feature);
     panel.classList.toggle("is-soon", soon);
+    panel.dataset.sec = sec.id;   // lets css/layout.css lay out one section on its own
     panel.innerHTML = feature ? featureHTML(sec) :
       `<header class="box phead"><h2><span class="num">${ROMAN[idx]}.</span>${titleCase(sec.heading || sec.label)}</h2>` +
       `<div class="phead__aside">${sec.lede && !soon ? `<p class="lede">${sec.lede}</p>` : "<span></span>"}` +

@@ -8,6 +8,7 @@ index.html                 the homepage / container
 css/style.css              all styling — grid, type, animation
 js/content.js              ALL TEXT AND MEDIA — edit here or with the editor
 admin/index.html           the editor (see "Editing content")
+admin/layout.html          the layout console (grid, gutters, placement)
 js/rd.js                   reaction–diffusion engine (WebGL2), shared
 js/main.js                 intro sequence, layout of the strips, panels
 assets/img/                texture.jpg (the steel fill), images
@@ -64,6 +65,28 @@ Edits stay in the editor until you save. There are three ways to save:
 The editor page is public if you deploy it, but it can't change anything
 without your folder or your token. To leave it off the live site, simply
 don't upload the `admin/` folder.
+
+### Layout console — `admin/layout.html`
+
+For locking in the wide-screen layout. Open `…/admin/layout.html` through the
+local server (in Chrome or Edge). It draws the module grid over each page
+(Home, a section, Structure & Process, Explore) with every part where the
+site puts it. Change the grid (columns, rows, how much of the window it
+fills, square modules), add column and row gutters, set the two fonts, and
+drag, snap and resize the parts; Alt drags free. The live page or a mock-up
+image can sit underneath for comparison.
+
+**Save to site** (Ctrl+S) writes two files into this folder — pick the
+folder once, the first time:
+
+* `css/layout.css` — the layout as CSS. `index.html` loads it after
+  `style.css`, so it wins. Reload the site to see it. Don't edit it by hand;
+  save again from the console. Delete it to go back to `style.css` alone.
+* `admin/layout.json` — every number; the console opens it next time, so the
+  layout travels with the repository.
+
+Commit both and push as usual. In browsers that can't write to folders,
+Save downloads the two files to put in place by hand.
 
 ### By hand
 
