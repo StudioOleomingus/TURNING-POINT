@@ -410,7 +410,8 @@
       fieldEl(sec, "id", "text", "Id (used in the link — letters, numbers, hyphens)", renderNav),
       fieldEl(sec, "heading", "text", "Heading"),
       fieldEl(sec, "lede", "text", "Short line beside the heading"),
-      fieldEl(sec, "layout", "layout", "Layout (desktop)")));
+      fieldEl(sec, "layout", "layout", "Layout (desktop)"),
+      fieldEl(sec, "comingSoon", "bool", "Show only “Coming soon.” (the boxes below are kept for later)")));
 
     main.append(h("hr"), h("h3", {}, `Boxes (${sec.items.length})`));
     if (sec.items.some(i => i.type === "project")) main.append(h("p", { class: "sub" }, "Exploration boxes that follow each other are shown as one sideways-scrolling row of tall cards."));

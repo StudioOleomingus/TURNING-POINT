@@ -234,6 +234,7 @@ window.SITE = {
       "id": "events",
       "label": "Events",
       "heading": "UPCOMING EVENTS",
+      "comingSoon": true,
       "lede": "Walk-throughs, Performances and Readings at the installation during the Biennale.",
       "items": [
         {

@@ -998,22 +998,25 @@
     railX = 0;
     const idx = SITE.sections.indexOf(sec);
     panel.style.setProperty("--wait", waitMs + "ms");
-    const horiz = sec.layout === "horizontal";
-    const feature = sec.layout === "feature" && !mqMobile.matches;
+    // comingSoon (content.js): only the title and "Coming soon." — the boxes are kept for later
+    const soon = !!sec.comingSoon;
+    const horiz = sec.layout === "horizontal" && !soon;
+    const feature = sec.layout === "feature" && !mqMobile.matches && !soon;
     panel.classList.toggle("is-h", horiz && !feature);
     // a sideways section of nothing but explorations: just the thumbnails (MOCK M5)
     panel.classList.toggle("is-cards", horiz && !feature && (sec.items || []).length > 0 && sec.items.every(it => it.type === "project"));
     panel.classList.toggle("is-feat", feature);
+    panel.classList.toggle("is-soon", soon);
     panel.innerHTML = feature ? featureHTML(sec) :
       `<header class="box phead"><h2><span class="num">${ROMAN[idx]}.</span>${titleCase(sec.heading || sec.label)}</h2>` +
-      `<div class="phead__aside">${sec.lede ? `<p class="lede">${sec.lede}</p>` : "<span></span>"}` +
+      `<div class="phead__aside">${sec.lede && !soon ? `<p class="lede">${sec.lede}</p>` : "<span></span>"}` +
       `<button class="back" type="button" data-go=""><span class="arrow" aria-hidden="true">←</span>Back</button></div></header>` +
       (horiz
         ? `<div class="htrack" tabindex="0">${itemsHTML(sec.items, true)}</div>` +
           `<div class="hfoot"><span class="hfoot__hint">Scroll</span><div class="rail__bar"><i></i></div>` +
           `<button class="rail__btn" type="button" data-dir="-1" aria-label="Back">←</button>` +
           `<button class="rail__btn" type="button" data-dir="1" aria-label="Forward">→</button></div>`
-        : itemsHTML(sec.items));
+        : soon ? `<p class="box soon span-4">Coming soon.</p>` : itemsHTML(sec.items));
     panel.scrollTop = 0;
     S.scrollT = 0;
     panel.querySelectorAll(".rail").forEach(initRail);

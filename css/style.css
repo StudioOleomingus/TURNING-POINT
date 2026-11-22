@@ -842,7 +842,7 @@ figcaption .fig { font-family: var(--serif); font-style: italic; font-size: 1.25
             mask: url(../assets/img/pattern-tile.png) 0 0 / var(--bg-tile) var(--bg-tile) repeat;
   }
   /* section open: the layers merge into one band pinned to the top */
-  .is-panel .stage { height: 44px; position: sticky !important; top: 0; z-index: 6 !important; background: var(--surface); }
+  .is-panel .stage { display: none; }   /* in a section: no pattern band at the top */
   .sliver { display: none; }
 
   .intro { grid-area: intro; padding: calc(var(--m) * 1.4) var(--m) calc(var(--m) * 2); overflow: visible; font-size: inherit; }
@@ -1288,4 +1288,10 @@ figcaption .fig, .cz__cap .fig, .card .num, .event .day {
   .panel.is-cards .htrack > .card .media { flex: none; aspect-ratio: 5 / 7; }
   .panel.is-cards .card .num { height: auto; margin: calc(.2 * var(--u)) 0 calc(.05 * var(--u)); font-size: calc(.53 * var(--u)); line-height: 1; }
   .panel.is-cards .card h3 { margin: 0; font-size: calc(.42 * var(--u)); line-height: 1.1; white-space: nowrap; overflow: visible; }
+}
+
+/* "Coming soon." (comingSoon in content.js): in the display italic, on the line under row 3 */
+.soon { margin: 0; font-family: var(--display); font-style: italic; font-weight: 700; line-height: 1; color: var(--ink); font-size: 34px; }
+@media (min-width: 821px) {
+  .panel > .soon { font-size: calc(.6 * var(--u)); padding-top: calc(.7 * var(--u)); }
 }

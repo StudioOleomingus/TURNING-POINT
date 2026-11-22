@@ -187,6 +187,9 @@ you like, and commit.
   (5 : 7 thumbnails) run from under it to the bottom of the frame and are cut
   at column 13; scroll or drag sideways for the rest. The CSS block
   "Explorations" at the end of `css/style.css`.
+* **Coming soon:** `"comingSoon": true` on a section in `content.js` (or the
+  tick box in the editor) shows only its title and "Coming soon." — the
+  boxes are kept, so unticking it brings them back. Events is set this way.
 * **Strip in the sections:** while a section is open the pattern strip on the
   right is drawn as black outlines, row by row as the rows slide away
   (`style` of the strip's squares in `layout()` in `js/main.js`).
@@ -194,7 +197,8 @@ you like, and commit.
   is used for every highlight: "Turning Point.", the section numbers, figure
   numbers, dates, links and the active menu item, on phones too.
 * **Phones:** "Turning Point." and the
-  links, the text, the pattern under the text and the logo under that; the menu at the bottom is
+  links, the text, the pattern under the text and the logo under that (in a
+  section there is no pattern band at the top); the menu at the bottom is
   in the bold italic of the wide-screen menu. The block "Phones" at the end
   of `css/style.css`.
 * **Fonts:** headings use `--display` ("Argent CF" first, then the
